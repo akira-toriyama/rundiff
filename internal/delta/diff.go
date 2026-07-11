@@ -190,12 +190,12 @@ func Diff(prev *Run, cur Run, ageSeconds int, key string, opt Options) Report {
 	opt = opt.withDefaults()
 	n := newNormalizer(opt)
 
-	r := Report{
+	r := Report{lineCore: lineCore{
 		V:          schemaVersion,
 		Key:        key,
 		Exit:       cur.Exit,
 		Normalized: !opt.Raw,
-	}
+	}}
 
 	if prev == nil {
 		r.Transition = string(TransitionBaseline)
