@@ -3,7 +3,9 @@ package runner
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -50,6 +52,29 @@ func TestRun_commandNotFound(t *testing.T) {
 	_, err := Run(context.Background(), []string{"rundiff-no-such-binary-xyzzy"})
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestRun_missingSlashPathIsNotFound(t *testing.T) {
+	// A path containing a slash skips PATH lookup, so a missing target fails at
+	// StartProcess with an *fs.PathError wrapping ENOENT. That is "not found"
+	// (a typo'd/renamed script, wrong cwd) → ErrNotFound (127), not 126.
+	for _, path := range []string{"./no-such-script-xyzzy.sh", "/nonexistent/abs/xyzzy"} {
+		if _, err := Run(context.Background(), []string{path}); !errors.Is(err, ErrNotFound) {
+			t.Errorf("Run(%q): err = %v, want ErrNotFound", path, err)
+		}
+	}
+}
+
+func TestRun_nonExecutableFileIsNotExecutable(t *testing.T) {
+	// A file that exists but lacks the execute bit is present-but-not-runnable →
+	// ErrNotExecutable (126). (Covers the final classification branch.)
+	f := filepath.Join(t.TempDir(), "data.txt")
+	if err := os.WriteFile(f, []byte("not a program\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(context.Background(), []string{f}); !errors.Is(err, ErrNotExecutable) {
+		t.Fatalf("err = %v, want ErrNotExecutable for a 0644 file", err)
 	}
 }
 
