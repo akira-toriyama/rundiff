@@ -1,0 +1,26 @@
+# Go build artifacts
+/rundiff
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Go workspace / vendor (kept out until needed)
+/vendor/
+go.work
+go.work.sum
+
+# Nix
+/result
+
+# macOS / editors
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Local scratch (reference clones live OUTSIDE this repo)
+/.reference/
+/tmp/
