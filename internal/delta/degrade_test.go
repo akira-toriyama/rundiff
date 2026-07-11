@@ -115,6 +115,27 @@ func TestDegrade_ansiColorNotBinary(t *testing.T) {
 	}
 }
 
+func fptr(f float64) *float64 { return &f }
+
+func TestDegrade_churnZeroHonored(t *testing.T) {
+	// An explicit `--churn 0` (ChurnLimit pointing at 0) means "degrade on any
+	// change": a modest delta that stays a trusted delta at the default 0.5 must
+	// degrade for high_churn here. Guards the *float64 sentinel fix — a plain
+	// float64 zero would have collided with the unset default and silently used 0.5.
+	prev := bigRun(0, "a", "b", "c", "d")
+	cur := bigRun(0, "a", "b", "c", "e") // one changed line among constant filler
+	if def := Diff(&prev, cur, 0, "k", Options{}); def.Degraded && *def.DegradeReason == reasonHighChurn {
+		t.Fatal("precondition: this delta should not high_churn-degrade at the default 0.5")
+	}
+	got := Diff(&prev, cur, 0, "k", Options{ChurnLimit: fptr(0)})
+	if !got.Degraded || got.DegradeReason == nil || *got.DegradeReason != reasonHighChurn {
+		t.Fatalf("--churn 0 should degrade on any change: degraded=%v reason=%v", got.Degraded, got.DegradeReason)
+	}
+	if got.Added == nil { // G5 keeps real counts
+		t.Error("high_churn degrade should keep real counts")
+	}
+}
+
 func TestDegrade_bothEmpty(t *testing.T) {
 	prev := Run{Exit: 0, Output: nil}
 	cur := Run{Exit: 0, Output: []byte{}}

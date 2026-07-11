@@ -29,9 +29,13 @@ type Options struct {
 	Raw  bool // skip normalization entirely (compare raw lines)
 	Full bool // show the bounded full current output as the body even when a delta exists
 
-	ChurnLimit    float64 // degrade when churn >= this (default 0.5)
-	MaxBodyLines  int     // bounded-full budget (default 200)
-	MaxDeltaLines int     // per-side +/- cap in a delta body (default 500)
+	// ChurnLimit degrades to full output when churn >= this. A pointer so the
+	// unset case (nil) is distinguishable from an explicit 0: nil defaults to
+	// 0.5, while a caller passing 0 means "degrade on any change" and is honored
+	// verbatim (a plain float64 zero-value would collide with the default).
+	ChurnLimit    *float64
+	MaxBodyLines  int // bounded-full budget (default 200)
+	MaxDeltaLines int // per-side +/- cap in a delta body (default 500)
 
 	// Per-rule escapes (the rule is ON unless the escape is set).
 	NoTime, NoDur, NoTmp, NoUUID, NoPort bool
@@ -40,8 +44,9 @@ type Options struct {
 }
 
 func (o Options) withDefaults() Options {
-	if o.ChurnLimit == 0 {
-		o.ChurnLimit = 0.5
+	if o.ChurnLimit == nil {
+		def := 0.5
+		o.ChurnLimit = &def
 	}
 	if o.MaxBodyLines == 0 {
 		o.MaxBodyLines = 200
@@ -226,8 +231,9 @@ func Diff(prev *Run, cur Run, ageSeconds int, key string, opt Options) Report {
 	r.TotalPrev, r.TotalCur = &tp, &tc
 	r.Truncated = truncated
 
-	// Degrade checks with real counts.
-	if reason, ok := degradePostDiff(prevSet, curSet, len(prev.Output), len(cur.Output), dc, opt); ok {
+	// Degrade checks with real counts. The already-computed churn is passed in so
+	// the reported r.Churn and the G5 threshold compare the exact same number.
+	if reason, ok := degradePostDiff(prevSet, curSet, len(prev.Output), len(cur.Output), dc, ch, opt); ok {
 		r.Degraded = true
 		r.setReason(reason)
 		r.body(cur.Output, opt)
