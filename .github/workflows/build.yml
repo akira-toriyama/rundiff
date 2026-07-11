@@ -1,0 +1,71 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: CI only needs to read the repo (never run on the default
+# repo-write token).
+permissions:
+  contents: read
+
+jobs:
+  # Shared Go CI core (build / vet / race-test / module-hygiene / golangci-lint v2),
+  # SHA-pinned once in the hub. go.mod's `go` line is the floor (no `toolchain`
+  # line), so gotoolchain: local installs the floor and stops a mid-run download.
+  ci:
+    uses: akira-toriyama/.github/.github/workflows/go-ci.yml@v1
+    with:
+      go-version-file: go.mod
+      gotoolchain: local
+      coverage: true
+
+  # Repo-specific checks. Docs guard and fuzz are OS-independent (Linux leg only);
+  # the smoke runs on every leg so the shipped binary (macOS brew cask) is exercised
+  # on darwin too.
+  extras:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # README hygiene guard: version-agnostic + EN/JA cross-link.
+      - name: docs guard
+        if: runner.os == 'Linux'
+        run: sh scripts/check-docs.sh
+
+      # Short fuzz of the pure core — a cheap regression net for the diff
+      # engine's invariants (never-panic, identical-input-zero-delta, multiset math).
+      - name: fuzz delta core (30s)
+        if: runner.os == 'Linux'
+        run: go test -run '^$' -fuzz '^FuzzDiff$' -fuzztime 30s ./internal/delta/
+
+      - name: smoke test
+        shell: bash
+        run: |
+          go build -o /tmp/rundiff ./cmd/rundiff
+          /tmp/rundiff version
+          export RUNDIFF_CACHE_DIR="$(mktemp -d)"
+          F="$(mktemp)"
+          # Fixed argv (`cat $F`), changing file content — a changed argv would
+          # just be a new baseline, not a diff.
+          printf 'a\nb\nc\n' > "$F"
+          /tmp/rundiff -- cat "$F" >/dev/null            # baseline
+          /tmp/rundiff --json -- cat "$F" | grep -q '"transition":"still_passing"'
+          printf 'a\nX\nc\n' > "$F"
+          /tmp/rundiff --json -- cat "$F" | grep -q '"added":1'
