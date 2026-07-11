@@ -105,6 +105,23 @@ func TestNormalize_optInWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestNormalize_noTimeDisablesISO(t *testing.T) {
+	// NoTime must disable the ENTIRE timestamp stage, not just the HH:MM:SS clock.
+	// With it set, an ISO datetime that is asserted data must survive: two
+	// different datetimes must NOT collapse to the same key (else --no-time could
+	// not un-mask a real change to a serialized ISO timestamp — the cardinal-rule
+	// violation the escape exists to avoid).
+	n := newNormalizer(Options{NoTime: true})
+	if a, b := n.line("serialized 2026-07-11T00:00:00Z"), n.line("serialized 2026-07-12T00:00:00Z"); a == b {
+		t.Errorf("NoTime did not disable ISO masking: both normalized to %q", a)
+	}
+	// And the default (NoTime off) still cancels the ISO timestamp noise.
+	d := newNormalizer(Options{})
+	if d.line("serialized 2026-07-11T00:00:00Z") != d.line("serialized 2026-07-12T00:00:00Z") {
+		t.Error("default normalizer should still cancel ISO timestamp noise")
+	}
+}
+
 func TestNormalize_rawIsIdentity(t *testing.T) {
 	in := "\x1b[31m2026-07-11T21:00:00Z done in 5ms\x1b[0m"
 	if got := newNormalizer(Options{Raw: true}).line(in); got != in {
