@@ -46,9 +46,9 @@ GoReleaser (binaries, checksums, Homebrew cask, build-provenance). The cask push
 needs `HOMEBREW_TAP_TOKEN`; without it the release still succeeds and skips only
 the cask. Bump nothing by hand — the version is ldflags-injected at tag time.
 
-Note: `flake.nix`'s `vendorHash` is a placeholder (`pkgs.lib.fakeHash`) until the
-first `nix build`; CI does not nix-build, so fill it in out of band before
-relying on `nix run`.
+Note: `flake.nix`'s `vendorHash` pins the vendored go modules. When go.mod/go.sum
+change, set it to `pkgs.lib.fakeHash`, run `nix build`, and paste the hash nix
+prints (CI does not nix-build, so this is maintained out of band).
 
 ## Task tracking
 
