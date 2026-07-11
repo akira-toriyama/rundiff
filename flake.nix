@@ -28,10 +28,10 @@
           pname = "rundiff";
           inherit version;
           src = ./.;
-          # Placeholder: set to pkgs.lib.fakeHash, run `nix build`, and paste the
-          # hash nix prints ("got: sha256-..."). CI does not nix-build, so this is
-          # filled in out of band before relying on `nix run`.
-          vendorHash = pkgs.lib.fakeHash;
+          # Pins the vendored go modules. When go.mod/go.sum change, set this to
+          # pkgs.lib.fakeHash, run `nix build`, and paste the hash nix prints
+          # ("got: sha256-...").
+          vendorHash = "sha256-7K17JaXFsjf163g5PXCb5ng2gYdotnZ2IDKk8KFjNj0=";
           ldflags = [
             "-s" "-w"
             "-X github.com/akira-toriyama/rundiff/internal/version.Version=${version}"
