@@ -164,6 +164,96 @@ func TestDegrade_churnZeroHonored(t *testing.T) {
 	}
 }
 
+// normUncertainFiller writes n identical constant lines to both builders —
+// shared context that clears small_output (bytes > 2048) and keeps churn < 0.5.
+func normUncertainFiller(prevB, curB *strings.Builder, n int) {
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(prevB, "constant filler line number %05d stays put\n", i)
+		fmt.Fprintf(curB, "constant filler line number %05d stays put\n", i)
+	}
+}
+
+func TestDegrade_normalizationUncertain_fires(t *testing.T) {
+	// A mid-band delta whose changed lines differ ONLY in opt-in-maskable tokens
+	// (0x addresses — residual noise the default ruleset deliberately leaves alone)
+	// collapses to ~nothing under the aggressive probe, so the compact delta is
+	// untrustworthy → degrade normalization_uncertain, counts kept, body bounded full.
+	var prevB, curB strings.Builder
+	normUncertainFiller(&prevB, &curB, 60)
+	for i := 0; i < 12; i++ {
+		fmt.Fprintf(&prevB, "alloc block at 0xAAAA%04x done\n", i)
+		fmt.Fprintf(&curB, "alloc block at 0xBBBB%04x done\n", i)
+	}
+	prev := Run{Exit: 0, Output: []byte(prevB.String())}
+	cur := Run{Exit: 0, Output: []byte(curB.String())}
+	r := Diff(&prev, cur, 0, "k", Options{})
+	if !r.Degraded || r.DegradeReason == nil || *r.DegradeReason != reasonNormUncertain {
+		t.Fatalf("degraded=%v reason=%v want normalization_uncertain (churn=%v added=%v)",
+			r.Degraded, r.DegradeReason, deref(r.Churn), r.Added)
+	}
+	if r.Added == nil || *r.Added != 12 || *r.Removed != 12 {
+		t.Errorf("normalization_uncertain must keep real counts: added=%v removed=%v want 12/12", r.Added, r.Removed)
+	}
+}
+
+func TestDegrade_normalizationUncertain_doesNotFireOnGenuineChange(t *testing.T) {
+	// A mid-band delta of genuine changes (bare integers, which no opt-in rule
+	// touches) does NOT collapse under the aggressive probe → it stays a trusted
+	// delta, never flagged normalization_uncertain (guards against over-degrading).
+	var prevB, curB strings.Builder
+	normUncertainFiller(&prevB, &curB, 60)
+	for i := 0; i < 12; i++ {
+		fmt.Fprintf(&prevB, "assertion %d expected 100 got 100\n", i)
+		fmt.Fprintf(&curB, "assertion %d expected 100 got %d\n", i, 200+i)
+	}
+	prev := Run{Exit: 1, Output: []byte(prevB.String())}
+	cur := Run{Exit: 1, Output: []byte(curB.String())}
+	r := Diff(&prev, cur, 0, "k", Options{})
+	if r.Degraded && r.DegradeReason != nil && *r.DegradeReason == reasonNormUncertain {
+		t.Errorf("genuine integer changes must not be flagged normalization_uncertain")
+	}
+}
+
+func TestDegrade_normalizationUncertain_skipsTinyDelta(t *testing.T) {
+	// Below minUncertainDelta the probe is skipped — a tiny delta is never degraded
+	// for normalization_uncertain, even when it is all opt-in noise.
+	var prevB, curB strings.Builder
+	normUncertainFiller(&prevB, &curB, 60)
+	prevB.WriteString("ptr 0xAAAA0001\nptr 0xAAAA0002\n")
+	curB.WriteString("ptr 0xBBBB0001\nptr 0xBBBB0002\n")
+	prev := Run{Exit: 0, Output: []byte(prevB.String())}
+	cur := Run{Exit: 0, Output: []byte(curB.String())}
+	r := Diff(&prev, cur, 0, "k", Options{})
+	if r.Degraded && r.DegradeReason != nil && *r.DegradeReason == reasonNormUncertain {
+		t.Errorf("a sub-threshold delta must not be flagged normalization_uncertain")
+	}
+}
+
+func TestDegrade_normalizationUncertain_realChangeSurvivesInBody(t *testing.T) {
+	// Even when normalization_uncertain degrades (mostly 0x noise), a genuine change
+	// mixed in must still appear in the bounded full body — degrade shows MORE, it
+	// never hides. The aggressive probe's counts only pick full-vs-delta; its
+	// (possibly unsafe) normalized output is never emitted.
+	var prevB, curB strings.Builder
+	normUncertainFiller(&prevB, &curB, 60)
+	for i := 0; i < 12; i++ {
+		fmt.Fprintf(&prevB, "alloc block at 0xAAAA%04x done\n", i)
+		fmt.Fprintf(&curB, "alloc block at 0xBBBB%04x done\n", i)
+	}
+	prevB.WriteString("FATAL: 0 errors\n")
+	curB.WriteString("FATAL: 7 errors\n")
+	prev := Run{Exit: 0, Output: []byte(prevB.String())}
+	cur := Run{Exit: 1, Output: []byte(curB.String())}
+	r := Diff(&prev, cur, 0, "k", Options{})
+	if !r.Degraded || r.DegradeReason == nil || *r.DegradeReason != reasonNormUncertain {
+		t.Fatalf("expected normalization_uncertain, got degraded=%v reason=%v", r.Degraded, r.DegradeReason)
+	}
+	_, body := Render(r, Options{})
+	if !strings.Contains(body, "FATAL: 7 errors") {
+		t.Errorf("the genuine change must appear in the bounded full body:\n%s", body)
+	}
+}
+
 func TestDegrade_bothEmpty(t *testing.T) {
 	prev := Run{Exit: 0, Output: nil}
 	cur := Run{Exit: 0, Output: []byte{}}

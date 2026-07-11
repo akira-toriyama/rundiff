@@ -93,6 +93,22 @@ func newNormalizer(opt Options) normalizer {
 	}
 }
 
+// moreAggressive returns a copy with the opt-in rules (0x/hex/date/collapse)
+// forced ON, and false when that would change nothing — under --raw (nothing is
+// normalized) or when every opt-in is already on. It is used only by the
+// normalization_uncertain probe (degrade.go): the caller's default-OFF escapes
+// (noTime, noDur, …) are left untouched so an escape the caller set deliberately
+// is not second-guessed. The probe's output is never displayed — only its delta
+// SIZE feeds the degrade decision — so turning on these (individually unsafe)
+// rules here can never hide a real change.
+func (n normalizer) moreAggressive() (normalizer, bool) {
+	if n.raw || (n.ptr && n.hex && n.date && n.collapse) {
+		return n, false
+	}
+	n.ptr, n.hex, n.date, n.collapse = true, true, true, true
+	return n, true
+}
+
 // line normalizes a single split line (no trailing \n) into its match key.
 func (n normalizer) line(s string) string {
 	if n.raw {

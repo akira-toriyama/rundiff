@@ -61,6 +61,16 @@ instead — it only ever shows *more*, so the predicates are biased to fire.
 | G4 | `small_output` | `min lines < 3` or `max bytes ≤ 2048` (a delta isn't clearer than the whole) | real |
 | G5 | `high_churn` | `churn ≥ --churn` (default 0.5) | real |
 | G6 | `too_large` | `added + removed > 2000` (unpasteable) | real |
+| G7 | `normalization_uncertain` | delta ≥ 8 **and** a re-diff under the opt-in rules (0x/hex/date/collapse) shrinks it to ≤ half — the residue was noise the default rules missed | real |
+
+G7 is the mid-churn safety net below G5. It re-diffs the same lines under a
+stronger normalizer (the default rules **plus** the opt-in ones, with the caller's
+escapes left untouched); if that collapses the delta to half or less, most of the
+"change" was run-varying noise the default set failed to cancel, so the compact
+delta is not trustworthy and rundiff shows bounded full output instead. This never
+hides a change — degrading only ever shows *more*, and the probe's (individually
+unsafe) normalized text is never displayed; only its delta *size* feeds the
+decision. Tiny deltas (`< 8`) are skipped so a genuine small change is never degraded.
 
 ## Invariants (enforced by tests + fuzz)
 
@@ -73,6 +83,5 @@ raw input line). See `internal/delta/*_test.go` and `FuzzDiff`/`FuzzNormalize`.
 
 ## Deferred (see docs/non-goals.md)
 
-The `normalization_uncertain` degrade (an aggressive-probe re-diff that catches
-mid-churn residual noise) and the file-level `fixed`/`new` adapter layer are
-planned but not in this version; the JSON schema reserves room for them.
+The file-level `fixed`/`new` adapter layer is planned but not in this version; the
+JSON schema reserves room for it.

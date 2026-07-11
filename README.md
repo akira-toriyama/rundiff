@@ -35,8 +35,9 @@ everything looks different. rundiff's diff is:
   real asserted data (bare numbers, dates, `0x…` values, git shas) is left alone
   by default — rundiff biases hard toward **never hiding a real change**.
 - **Honest.** When the delta can't be trusted (binary output, huge churn, torn
-  parallel output) rundiff *degrades* to a bounded full view and says so in the
-  `degraded` / `degrade_reason` fields. It never prints a delta it doesn't trust.
+  parallel output, or a re-diff shows the change was mostly residual normalization
+  noise) rundiff *degrades* to a bounded full view and says so in the `degraded` /
+  `degrade_reason` fields. It never prints a delta it doesn't trust.
 
 ## Install
 
@@ -89,7 +90,7 @@ no trustworthy line diff was computed (baseline, or a degrade that nulls counts)
 | `prev_exit` | int \| null | the baseline's exit code (`null` on baseline) |
 | `transition` | enum | `baseline` \| `still_passing` \| `still_failing` \| `fixed` \| `regressed` — from the exit pair, always trustworthy |
 | `degraded` | bool | `true` ⇒ the body is bounded full output, not a delta |
-| `degrade_reason` | enum \| null | `binary` \| `too_large` \| `interleave` \| `small_output` \| `high_churn` |
+| `degrade_reason` | enum \| null | `binary` \| `too_large` \| `interleave` \| `small_output` \| `high_churn` \| `normalization_uncertain` |
 | `added` / `removed` / `unchanged` | int \| null | line counts (multiset; `unchanged` includes moved lines) |
 | `churn` | float \| null | `(added+removed)/(added+removed+unchanged)` |
 | `total_prev` / `total_cur` | int \| null | normalized line counts |

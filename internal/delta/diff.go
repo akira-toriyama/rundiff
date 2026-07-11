@@ -219,8 +219,10 @@ func Diff(prev *Run, cur Run, ageSeconds int, key string, opt Options) Report {
 		return r
 	}
 
-	prevSet := buildSet(splitLines(prev.Output), n)
-	curSet := buildSet(splitLines(cur.Output), n)
+	prevLines := splitLines(prev.Output)
+	curLines := splitLines(cur.Output)
+	prevSet := buildSet(prevLines, n)
+	curSet := buildSet(curLines, n)
 	dc, truncated := compare(prevSet, curSet, opt.MaxDeltaLines)
 
 	added, removed, unchanged := dc.added, dc.removed, dc.unchanged
@@ -234,6 +236,16 @@ func Diff(prev *Run, cur Run, ageSeconds int, key string, opt Options) Report {
 	// Degrade checks with real counts. The already-computed churn is passed in so
 	// the reported r.Churn and the G5 threshold compare the exact same number.
 	if reason, ok := degradePostDiff(prevSet, curSet, len(prev.Output), len(cur.Output), dc, ch, opt); ok {
+		r.Degraded = true
+		r.setReason(reason)
+		r.body(cur.Output, opt)
+		return r
+	}
+
+	// G7: re-diff under a stronger normalizer; if the delta mostly evaporates it
+	// was residual noise the default rules missed, so the compact delta can't be
+	// trusted. Never hides a change — degrade only shows more (see uncertainDegrade).
+	if reason, ok := uncertainDegrade(prevLines, curLines, dc, n); ok {
 		r.Degraded = true
 		r.setReason(reason)
 		r.body(cur.Output, opt)
