@@ -39,7 +39,10 @@ var (
 	// D4 (unanchored spelled-out durations like "5 minutes") was dropped: it
 	// masked ambiguous tokens ("5 min" = minimum) and could hide a real change.
 	// Elapsed-time noise is covered by D1 (compound), D2 (abbrev/dec-sec) and D3
-	// (keyword-anchored, so the keyword proves it is a duration, not data).
+	// (keyword-anchored). The keyword makes a duration overwhelmingly likely in
+	// build/test output — rundiff's domain — but is not a proof: a bare m/s after
+	// in/after/ran could be distance ("target in 5m" = 5 metres). --no-dur is the
+	// escape when a keyword+unit is actually asserted data.
 
 	// The temp-path tail class stops at delimiters that commonly glue run-varying
 	// data to a path (comma, =, ], }, (, >, &, |, quotes) so the mask never

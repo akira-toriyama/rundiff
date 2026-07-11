@@ -30,7 +30,7 @@ everything looks different. rundiff's diff is:
   that prints its cases in a different order each run reports **zero changes**. A
   line that merely moved counts as unchanged.
 - **Normalized.** Timestamps, durations, temp paths (`/tmp/…`, `/var/folders/…`),
-  ANSI escapes, goroutine ids, UUIDs and ephemeral ports are canonicalized
+  ANSI escapes, goroutine ids, UUIDs and loopback `host:port` are canonicalized
   *before* comparison, so they don't show up as noise. Anything that could be
   real asserted data (bare numbers, dates, `0x…` values, git shas) is left alone
   by default — rundiff biases hard toward **never hiding a real change**.
@@ -96,8 +96,8 @@ no trustworthy line diff was computed (baseline, or a degrade that nulls counts)
 | `baseline_age_s` | int \| null | seconds since the baseline was recorded |
 | `normalized` | bool | `false` under `--raw` |
 | `truncated` | bool | body/arrays clipped by a budget |
-| `added_lines` / `removed_lines` | []string | `--json`, non-degraded: raw representative lines |
-| `body` | string | `--json`, degraded/baseline: the bounded full output |
+| `added_lines` / `removed_lines` | []string | `--json`, non-degraded, **not** `--full`: raw representative lines |
+| `body` | string | `--json` on baseline / degrade / `--full`: the bounded full output |
 
 ## Exit codes
 
@@ -110,9 +110,9 @@ high codes for its own failures:
 | `125` | rundiff's own error (bad flags, cache/IO failure) |
 | `126` | the command was found but is not executable |
 | `127` | the command was not found |
-| `130` | interrupted (Ctrl-C) before the run completed |
+| `130` | interrupted (Ctrl-C / SIGTERM) before the run completed |
 
-A propagated `125`/`126`/`127` is distinguishable from rundiff's own by the
+A propagated `125`/`126`/`127`/`130` is distinguishable from rundiff's own by the
 JSON line: rundiff's own errors print to **stderr** and emit **no** JSON line.
 
 ## Composing with pare

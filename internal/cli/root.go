@@ -28,11 +28,11 @@ import (
 //	125     rundiff's own error (bad flags, cache/IO failure)
 //	126     the command was found but is not executable
 //	127     the command was not found
-//	130     interrupted (Ctrl-C) before the run completed
+//	130     interrupted (Ctrl-C / SIGTERM) before the run completed
 //
-// A propagated 125/126/127 is indistinguishable from rundiff's own only by the
-// number; the machine-readable JSON line on stdout disambiguates (rundiff's own
-// errors emit no JSON line and print to stderr).
+// A propagated 125/126/127/130 is indistinguishable from rundiff's own only by
+// the number; the machine-readable JSON line on stdout disambiguates (rundiff's
+// own errors emit no JSON line and print to stderr).
 const (
 	codeRundiff       = 125
 	codeNotExecutable = 126
