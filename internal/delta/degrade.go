@@ -10,11 +10,12 @@ import (
 // compact delta and prints bounded full output instead — it only ever shows
 // MORE, never less, so the predicates are deliberately biased to fire.
 const (
-	reasonBinary     = "binary"
-	reasonTooLarge   = "too_large"
-	reasonInterleave = "interleave"
-	reasonSmall      = "small_output"
-	reasonHighChurn  = "high_churn"
+	reasonBinary        = "binary"
+	reasonTooLarge      = "too_large"
+	reasonInterleave    = "interleave"
+	reasonSmall         = "small_output"
+	reasonHighChurn     = "high_churn"
+	reasonNormUncertain = "normalization_uncertain"
 )
 
 const (
@@ -24,6 +25,9 @@ const (
 	maxDeltaTotal = 2000 // added+removed above this is unpasteable → degrade
 	minSmallLines = 3
 	minSmallBytes = 2048
+	// minUncertainDelta gates the normalization_uncertain probe: below it a delta
+	// is too small to be worth a second diff, and too small to want degraded.
+	minUncertainDelta = 8
 )
 
 // splitLines splits raw output into lines on '\n', dropping the single empty
@@ -71,6 +75,35 @@ func degradePostDiff(prev, cur lineSet, prevBytes, curBytes int, dc diffCounts, 
 	}
 	if dc.added+dc.removed > maxDeltaTotal {
 		return reasonTooLarge, true // G6
+	}
+	return "", false
+}
+
+// uncertainDegrade (G7, runs after G4/G5/G6 pass) re-diffs the same lines under a
+// stronger normalizer — the aggressive probe (base ruleset plus the opt-in
+// 0x/hex/date/collapse rules). If that collapses the delta to half or less, most
+// of the "change" was run-varying noise the default ruleset failed to cancel, so
+// the compact delta is untrustworthy and we degrade to bounded full output.
+//
+// SAFETY: this can never hide a real change. Degrading only ever shows MORE (the
+// bounded full current output); the probe's (individually unsafe) normalized text
+// is never displayed — only its delta SIZE decides full-vs-delta. It stays a
+// mid-band guard: G5 already withholds wholesale-changed deltas, and tiny deltas
+// (< minUncertainDelta) are skipped so a genuine small change is never degraded.
+// Counts are the caller's real (default-config) counts, kept like G4/G5/G6.
+func uncertainDegrade(prevLines, curLines []string, dc diffCounts, base normalizer) (string, bool) {
+	def := dc.added + dc.removed
+	if def < minUncertainDelta {
+		return "", false
+	}
+	agg, ok := base.moreAggressive()
+	if !ok {
+		return "", false // --raw, or every opt-in already on → the probe adds nothing
+	}
+	// maxLines 0: we need only the counts, not the representative arrays.
+	aggDC, _ := compare(buildSet(prevLines, agg), buildSet(curLines, agg), 0)
+	if 2*(aggDC.added+aggDC.removed) <= def {
+		return reasonNormUncertain, true // G7
 	}
 	return "", false
 }

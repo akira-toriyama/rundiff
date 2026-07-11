@@ -26,11 +26,6 @@ What rundiff deliberately does **not** do, so the tool stays small and composabl
   go test / tsc / eslint) would post-process those into `fixed: ["src/x.test.ts"]`
   / `new: [...]` file arrays. The JSON schema reserves those top-level keys; the
   core never emits them under `v:1`.
-- **The `normalization_uncertain` degrade (aggressive probe).** A second diff
-  under a stronger normalizer; if half the delta evaporates, the delta is likely
-  residual noise we failed to cancel, so degrade. Enforces "never emit a delta we
-  don't trust" in the mid-churn band (below `high_churn`). Planned; not in this
-  version — `high_churn` already withholds wholesale-changed deltas.
 - **`--baseline <id>` history.** Today rundiff keeps one baseline per key (the
   last run). Pinning an older comparison point needs a per-key run history.
 - **A Claude Code `PreToolUse` hook** that auto-wraps target commands, so an
