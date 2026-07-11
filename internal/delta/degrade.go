@@ -71,12 +71,14 @@ func degradePreDiff(prev, cur []byte) (string, bool) {
 	return "", false
 }
 
-// degradePostDiff runs the checks that need the real multiset counts.
-func degradePostDiff(prev, cur lineSet, prevBytes, curBytes int, dc diffCounts, opt Options) (string, bool) {
+// degradePostDiff runs the checks that need the real multiset counts. ch is the
+// churn already computed by Diff (opt.ChurnLimit is non-nil here — withDefaults
+// ran before this is reached).
+func degradePostDiff(prev, cur lineSet, prevBytes, curBytes int, dc diffCounts, ch float64, opt Options) (string, bool) {
 	if min(prev.total, cur.total) < minSmallLines || max(prevBytes, curBytes) <= minSmallBytes {
 		return reasonSmall, true // G4
 	}
-	if churn(dc.added, dc.removed, dc.unchanged) >= opt.ChurnLimit {
+	if ch >= *opt.ChurnLimit {
 		return reasonHighChurn, true // G5
 	}
 	if dc.added+dc.removed > maxDeltaTotal {
