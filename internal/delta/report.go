@@ -12,24 +12,12 @@ import (
 const schemaVersion = 1
 
 // Report is the outcome of a Diff: the machine-readable summary (line 1) plus the
-// human/agent-facing body. It is pure data — Render turns it into bytes.
+// human/agent-facing body. It is pure data — Render turns it into bytes. The
+// line-1 fields live in the embedded lineCore (promoted, so callers still write
+// r.Added etc.), so the JSON field set is declared in exactly one place — adding
+// or renaming a field can no longer silently desync a hand-copied duplicate.
 type Report struct {
-	V             int
-	Key           string
-	Exit          int
-	PrevExit      *int
-	Transition    string
-	Degraded      bool
-	DegradeReason *string
-	Added         *int
-	Removed       *int
-	Unchanged     *int
-	Churn         *float64
-	TotalPrev     *int
-	TotalCur      *int
-	BaselineAgeS  *int
-	Normalized    bool
-	Truncated     bool
+	lineCore
 
 	// Presentation, filled by body()/delta(); Render selects by mode.
 	addedLines   []string
@@ -108,10 +96,7 @@ func boundedFull(output []byte, budget int) ([]string, bool) {
 	if len(lines) <= budget {
 		return lines, false
 	}
-	head := 50
-	if head > budget/2 {
-		head = budget / 2
-	}
+	head := min(50, budget/2)
 	tail := budget - head
 	omitted := len(lines) - head - tail
 	out := make([]string, 0, budget+1)
@@ -176,14 +161,7 @@ type lineCore struct {
 	Truncated     bool     `json:"truncated"`
 }
 
-func (r Report) core() lineCore {
-	return lineCore{
-		V: r.V, Key: r.Key, Exit: r.Exit, PrevExit: r.PrevExit, Transition: r.Transition,
-		Degraded: r.Degraded, DegradeReason: r.DegradeReason, Added: r.Added, Removed: r.Removed,
-		Unchanged: r.Unchanged, Churn: r.Churn, TotalPrev: r.TotalPrev, TotalCur: r.TotalCur,
-		BaselineAgeS: r.BaselineAgeS, Normalized: r.Normalized, Truncated: r.Truncated,
-	}
-}
+func (r Report) core() lineCore { return r.lineCore }
 
 // Render produces the line-1 JSON object and the text body to print after it.
 // In --json mode the object carries the arrays/body and the returned body is "".

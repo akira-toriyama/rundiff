@@ -2,6 +2,7 @@ package delta
 
 import (
 	"bytes"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -39,20 +40,7 @@ func splitLines(b []byte) []string {
 	if s == "" {
 		return []string{""} // the input was exactly "\n": one blank line
 	}
-	return splitOnNewline(s)
-}
-
-func splitOnNewline(s string) []string {
-	out := make([]string, 0, bytes.Count([]byte(s), []byte{'\n'})+1)
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			out = append(out, s[start:i])
-			start = i + 1
-		}
-	}
-	out = append(out, s[start:])
-	return out
+	return strings.Split(s, "\n")
 }
 
 // degradePreDiff runs the checks that must precede the multiset build: they null
