@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io/fs"
 	"os/exec"
 	"strings"
 )
@@ -78,19 +79,18 @@ func Run(ctx context.Context, argv []string) (Result, error) {
 		return res, nil
 	}
 
-	// The command could not be started. Classify the two conventional cases so
-	// the CLI can return 127 (not found) / 126 (not executable).
-	if errors.Is(err, exec.ErrNotFound) {
+	// The command could not be started. Classify to the conventional 127 (not
+	// found) / 126 (not executable) by the underlying cause:
+	//   - a bare name not on PATH surfaces as exec.ErrNotFound (LookPath), which
+	//     errors.Is finds by unwrapping through the *exec.Error;
+	//   - a path containing a slash skips PATH lookup, so a missing target fails
+	//     at StartProcess with an *fs.PathError wrapping ENOENT (fs.ErrNotExist) —
+	//     still "not found" (a typo'd/renamed script, wrong cwd), not 126.
+	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, fs.ErrNotExist) {
 		return Result{}, ErrNotFound
 	}
-	var execErr *exec.Error
-	if errors.As(err, &execErr) {
-		if errors.Is(execErr.Err, exec.ErrNotFound) || strings.Contains(execErr.Err.Error(), "not found") {
-			return Result{}, ErrNotFound
-		}
-		return Result{}, ErrNotExecutable
-	}
-	// os.PathError etc. — path present but not runnable.
+	// Anything else that prevented start (permission denied, ENOEXEC, a directory,
+	// …) is a present-but-not-runnable target → 126.
 	return Result{}, ErrNotExecutable
 }
 
