@@ -112,9 +112,13 @@ func (n normalizer) line(s string) string {
 		s = strings.ReplaceAll(s, "\x1b", "") // A5 lone ESC
 	}
 
-	// Stage 3 — timestamps (T1 before T2).
-	s = reISOTS.ReplaceAllString(s, "<TS>")
+	// Stage 3 — timestamps (T1 before T2). NoTime disables the entire timestamp
+	// stage, so a caller can un-mask an ISO datetime that is asserted data — not
+	// just the HH:MM:SS clock. (reISOTS must stay gated with reClock: leaving it
+	// unconditional would hide a real change to an ISO datetime under --no-time,
+	// the exact cardinal-rule violation the escape exists to avoid.)
 	if !n.noTime {
+		s = reISOTS.ReplaceAllString(s, "<TS>")
 		s = reClock.ReplaceAllString(s, "<TIME>")
 	}
 
