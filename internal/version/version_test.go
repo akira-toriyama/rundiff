@@ -5,6 +5,37 @@ import (
 	"testing"
 )
 
+func TestHuman_shapes(t *testing.T) {
+	// Human() is the --version / `rundiff version` line; assert its four shapes
+	// and the 12-char commit truncation exactly (each regresses silently otherwise).
+	cases := []struct {
+		name string
+		in   Info
+		want string
+	}{
+		{"commit+date, 12-char trunc", Info{Version: "1.2.3", Commit: "abcdef1234567890", Date: "2026-01-01", Go: "go1.26"}, "1.2.3 (abcdef123456, 2026-01-01) go1.26"},
+		{"commit only", Info{Version: "dev", Commit: "short", Go: "go1.26"}, "dev (short) go1.26"},
+		{"date only", Info{Version: "dev", Date: "2026-01-01", Go: "go1.26"}, "dev (2026-01-01) go1.26"},
+		{"neither", Info{Version: "dev", Go: "go1.26"}, "dev go1.26"},
+	}
+	for _, c := range cases {
+		if got := c.in.Human(); got != c.want {
+			t.Errorf("%s: Human() = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestGet_alwaysPopulatesVersionAndGo(t *testing.T) {
+	// Whatever the build mode, Version and Go are never empty (Get seeds them).
+	got := Get()
+	if got.Version == "" {
+		t.Error("Get().Version is empty")
+	}
+	if got.Go == "" {
+		t.Error("Get().Go is empty")
+	}
+}
+
 func TestFillFromBuildInfo_moduleVersion(t *testing.T) {
 	// `go install pkg@vX.Y.Z`: no VCS stamps, but Main.Version carries the
 	// installed module version — it must fill the still-"dev" version so the

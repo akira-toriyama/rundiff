@@ -2,6 +2,7 @@ package cache
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -84,6 +85,40 @@ func TestSave_atomicNoTempLeft(t *testing.T) {
 		if filepath.Ext(e) == ".tmp" {
 			t.Errorf("temp file left behind: %s", e)
 		}
+	}
+}
+
+func TestLoad_corruptIsNotFatal(t *testing.T) {
+	// A malformed cache file must be surfaced as an error AND treated as absent
+	// (nil, false), so the caller re-establishes the baseline instead of diffing
+	// against garbage or wedging the run.
+	dir := t.TempDir()
+	key := Key([]string{"x"}, "/w", "")
+	if err := os.WriteFile(filepath.Join(dir, key+".json"), []byte("{not valid json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e, ok, err := Load(dir, key)
+	if err == nil {
+		t.Error("a corrupt entry should surface an error")
+	}
+	if ok || e != nil {
+		t.Errorf("a corrupt entry must be treated as absent: ok=%v e=%v", ok, e)
+	}
+}
+
+func TestDir_relativeXDGIgnoredThenHomeFallback(t *testing.T) {
+	// A RELATIVE XDG_CACHE_HOME must be ignored (spec: absolute only), falling back
+	// to ~/.cache/rundiff — not os.UserCacheDir (which is ~/Library/Caches on darwin).
+	t.Setenv("RUNDIFF_CACHE_DIR", "")
+	t.Setenv("XDG_CACHE_HOME", "relative/dir")
+	t.Setenv("HOME", filepath.Join(t.TempDir(), "home"))
+	got, err := Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(os.Getenv("HOME"), ".cache", "rundiff")
+	if got != want {
+		t.Errorf("Dir = %q, want %q (relative XDG ignored, home fallback)", got, want)
 	}
 }
 

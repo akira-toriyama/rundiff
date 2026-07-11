@@ -15,11 +15,18 @@ import (
 // exit code (mirroring Execute's error→code mapping).
 func runCLI(t *testing.T, args ...string) (string, int) {
 	t.Helper()
+	return runCLICtx(t, context.Background(), args...)
+}
+
+// runCLICtx is runCLI under a caller-supplied context, so a test can drive the
+// interrupt path with a pre-cancelled context.
+func runCLICtx(t *testing.T, ctx context.Context, args ...string) (string, int) {
+	t.Helper()
 	root := newRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetArgs(args)
-	err := root.ExecuteContext(context.Background())
+	err := root.ExecuteContext(ctx)
 	if err == nil {
 		return out.String(), 0
 	}
@@ -150,9 +157,91 @@ func TestNoCommand(t *testing.T) {
 }
 
 func TestChurnOutOfRange(t *testing.T) {
-	_, code := runCLI(t, "--churn", "2", "--", "true")
-	if code != codeRundiff {
-		t.Errorf("exit code = %d, want %d for --churn out of range", code, codeRundiff)
+	// Both arms of the 0..1 validation.
+	for _, v := range []string{"2", "-0.5"} {
+		if _, code := runCLI(t, "--churn", v, "--", "true"); code != codeRundiff {
+			t.Errorf("--churn %s: exit code = %d, want %d (out of range)", v, code, codeRundiff)
+		}
+	}
+}
+
+func TestChurnZeroDegradesOnAnyChange(t *testing.T) {
+	if _, err := os.Stat("/bin/cat"); err != nil {
+		t.Skip("/bin/cat unavailable")
+	}
+	setCache(t)
+	f := filepath.Join(t.TempDir(), "data")
+	os.WriteFile(f, []byte(bigContent("a", "b", "c")), 0o644)
+	runCLI(t, "--churn", "0", "--", "cat", f) // baseline
+	os.WriteFile(f, []byte(bigContent("a", "X", "c")), 0o644)
+	out, _ := runCLI(t, "--json", "--churn", "0", "--", "cat", f)
+	// --churn 0 means "degrade on any change" — an explicit 0 must reach the core
+	// (not collide with the unset default 0.5).
+	if !strings.Contains(out, `"degraded":true`) || !strings.Contains(out, `"degrade_reason":"high_churn"`) {
+		t.Errorf("--churn 0 should degrade (high_churn) on any change: %s", out)
+	}
+}
+
+func TestNotExecutableExitCode(t *testing.T) {
+	setCache(t)
+	f := filepath.Join(t.TempDir(), "not-exec")
+	if err := os.WriteFile(f, []byte("data\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := runCLI(t, "--", f); code != codeNotExecutable {
+		t.Errorf("exit code = %d, want %d (not executable)", code, codeNotExecutable)
+	}
+}
+
+func TestInterruptedExitCode(t *testing.T) {
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("/bin/sh unavailable")
+	}
+	setCache(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already cancelled → the run is interrupted before it can complete
+	if _, code := runCLICtx(t, ctx, "--", "sh", "-c", "sleep 5"); code != codeInterrupted {
+		t.Errorf("exit code = %d, want %d (interrupted)", code, codeInterrupted)
+	}
+}
+
+func TestSignalDeathPropagatesAs128(t *testing.T) {
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("/bin/sh unavailable")
+	}
+	setCache(t)
+	// A wrapped command that dies of its own signal (exit -1) maps to 128.
+	if _, code := runCLI(t, "--", "sh", "-c", "kill -TERM $$"); code != 128 {
+		t.Errorf("exit code = %d, want 128 (signal death)", code)
+	}
+}
+
+func TestCorruptBaselineTreatedAsFresh(t *testing.T) {
+	if _, err := os.Stat("/bin/cat"); err != nil {
+		t.Skip("/bin/cat unavailable")
+	}
+	dir := t.TempDir()
+	t.Setenv("RUNDIFF_CACHE_DIR", dir)
+	f := filepath.Join(t.TempDir(), "data")
+	os.WriteFile(f, []byte(bigContent("a", "b", "c")), 0o644)
+
+	runCLI(t, "--", "cat", f) // establish a baseline (writes one cache file)
+	cacheFiles, _ := filepath.Glob(filepath.Join(dir, "*.json"))
+	if len(cacheFiles) == 0 {
+		t.Fatal("no cache file was created by the baseline run")
+	}
+	for _, cf := range cacheFiles { // corrupt it
+		os.WriteFile(cf, []byte("{not valid json"), 0o644)
+	}
+
+	// The corrupt baseline must not wedge the run: it is treated as absent, so the
+	// next run cleanly re-establishes a baseline (exit 0, transition=baseline).
+	out, code := runCLI(t, "--json", "--", "cat", f)
+	if code != 0 {
+		t.Fatalf("corrupt baseline wedged the run: exit=%d", code)
+	}
+	if !strings.Contains(out, `"transition":"baseline"`) {
+		t.Errorf("corrupt baseline should be treated as absent (fresh baseline): %s", out)
 	}
 }
 

@@ -84,6 +84,34 @@ func TestDegrade_highChurn(t *testing.T) {
 	}
 }
 
+func TestDegrade_tooLargeByDeltaCountKeepsCounts(t *testing.T) {
+	// G6: added+removed > maxDeltaTotal (2000) while churn stays below the limit
+	// (so G5 does not preempt) → degrade too_large, but the counts stay REAL —
+	// unlike the input-size G2, which nulls them. This is the "unpasteable delta"
+	// guard, and the only too_large path that keeps counts.
+	var prevB, curB strings.Builder
+	for i := 0; i < 3000; i++ { // shared lines keep churn well below 0.5
+		fmt.Fprintf(&prevB, "shared %05d\n", i)
+		fmt.Fprintf(&curB, "shared %05d\n", i)
+	}
+	for i := 0; i < 1100; i++ { // 1100 removed + 1100 added = 2200 > 2000
+		fmt.Fprintf(&prevB, "prev-only %05d\n", i)
+		fmt.Fprintf(&curB, "cur-only %05d\n", i)
+	}
+	prev := Run{Exit: 1, Output: []byte(prevB.String())}
+	cur := Run{Exit: 1, Output: []byte(curB.String())}
+	r := Diff(&prev, cur, 0, "k", Options{})
+	if !r.Degraded || r.DegradeReason == nil || *r.DegradeReason != reasonTooLarge {
+		t.Fatalf("reason=%v want too_large (G6)", r.DegradeReason)
+	}
+	if r.Added == nil {
+		t.Fatal("G6 too_large-by-delta-count should KEEP real counts (unlike the G2 input-size guard)")
+	}
+	if *r.Added != 1100 || *r.Removed != 1100 {
+		t.Errorf("counts: added=%d removed=%d want 1100/1100", *r.Added, *r.Removed)
+	}
+}
+
 func TestDegrade_notTriggeredForModestDelta(t *testing.T) {
 	prev := bigRun(0, "a", "b", "c", "d")
 	cur := bigRun(0, "a", "b", "c", "d", "e") // one added line among lots of filler
