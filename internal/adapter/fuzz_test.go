@@ -14,6 +14,21 @@ func FuzzExtract(f *testing.F) {
 	f.Add([]byte("--- FAIL: TestX (0.00s)\nFAIL\tp\t0.2s\n"), 1, []byte("ok  \tp\t0.2s\n"), 0, byte(1))
 	f.Add([]byte(""), 0, []byte("\x1b[31mFAIL\tp\t1s\x1b[0m\n"), 1, byte(2))
 	f.Add([]byte("?   \tp\t[no test files]\n"), 0, []byte("\x00"), -1, byte(3))
+	// Every committed capture, paired with its own tool's other scenarios —
+	// the fuzzer mutates from real transcripts, where the gates matter most.
+	seeds := map[string][]Run{}
+	for _, sc := range captureScenarios(f) {
+		seeds[sc[0]] = append(seeds[sc[0]], loadCapture(f, sc[0], sc[1]))
+	}
+	idx := byte(0)
+	for _, runs := range seeds {
+		for _, prev := range runs {
+			for _, cur := range runs {
+				f.Add(prev.Output, prev.Exit, cur.Output, cur.Exit, idx)
+				idx++
+			}
+		}
+	}
 	f.Fuzz(func(t *testing.T, prevOut []byte, prevExit int, curOut []byte, curExit int, toolIdx byte) {
 		tools := append(Tools(), "", "none")
 		forced := tools[int(toolIdx)%len(tools)]

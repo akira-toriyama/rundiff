@@ -1,0 +1,35 @@
+
+ RUN  v3.2.7 /private/tmp/claude-501/-Volumes-workspace-github-com-akira-toriyama-rundiff/98185392-74b5-4636-9c0f-5b0629bab28c/scratchpad/fixtures/js
+
+ ✓ vtests/str.test.js (1 test) 1ms
+ ❯ vtests/math.test.js (2 tests | 1 failed) 4ms
+   ✓ adds 1ms
+   × multiplies 3ms
+     → expected 6 to be 7 // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  vtests/math.test.js > multiplies
+AssertionError: expected 6 to be 7 // Object.is equality
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 7[39m
+[31m+ 6[39m
+
+ ❯ vtests/math.test.js:5:46
+      3| function mul(a, b) { return a * b; }
+      4| test('adds', () => { expect(add(2, 3)).toBe(5); });
+      5| test('multiplies', () => { expect(mul(2, 3)).toBe(7); });
+       |                                              ^
+      6| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 2 passed (3)
+   Start at  10:14:47
+   Duration  174ms (transform 11ms, setup 0ms, collect 11ms, tests 5ms, environment 0ms, prepare 63ms)
+

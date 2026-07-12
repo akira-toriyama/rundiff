@@ -12,7 +12,7 @@ import (
 // <scenario>.out + .exit). Captures are raw bytes from actual tool runs — see
 // each tool dir's VERSIONS for provenance ("transcribed" = hand-written from
 // the documented format because the tool was absent on the capture machine).
-func loadCapture(t *testing.T, tool, scenario string) Run {
+func loadCapture(t testing.TB, tool, scenario string) Run {
 	t.Helper()
 	dir := filepath.Join("testdata", "captures", tool)
 	out, err := os.ReadFile(filepath.Join(dir, scenario+".out"))
@@ -32,7 +32,7 @@ func loadCapture(t *testing.T, tool, scenario string) Run {
 
 // captureScenarios lists every committed capture as (tool, scenario) pairs for
 // the cross-tool invariant sweeps.
-func captureScenarios(t *testing.T) [][2]string {
+func captureScenarios(t testing.TB) [][2]string {
 	t.Helper()
 	var out [][2]string
 	tools, err := os.ReadDir(filepath.Join("testdata", "captures"))
