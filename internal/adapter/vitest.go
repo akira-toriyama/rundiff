@@ -27,7 +27,11 @@ var (
 	reVtTests    = regexp.MustCompile(`^\s*Tests\s\s+.*\(\d+\)`)
 	reVtFailHdr  = regexp.MustCompile(`^\s*FAIL\s+((?:\|[^|]+\|\s+)?\S+)`)
 	reVtFailList = regexp.MustCompile(`^\s*❯\s+((?:\|[^|]+\|\s+)?\S+)\s+\(.*failed`)
-	reVtPassList = regexp.MustCompile(`^\s*✓\s+((?:\|[^|]+\|\s+)?\S+)\s+\(([^)]*)\)`)
+	// A file ✓ line always carries a `(N test[s] …)` count; a per-test ✓ line
+	// (`✓ adds 1ms`, `✓ name (edge)`) never does. Requiring the test-count
+	// paren is what separates a real file-pass from a test name that merely
+	// looks path-shaped.
+	reVtPassList = regexp.MustCompile(`^\s*✓\s+((?:\|[^|]+\|\s+)?\S+)\s+\((\d+ tests?[^)]*)\)`)
 	reVtSkipList = regexp.MustCompile(`^\s*↓\s+((?:\|[^|]+\|\s+)?\S+)`)
 	reVtNFailed  = regexp.MustCompile(`(\d+) failed`)
 	reVtNPassed  = regexp.MustCompile(`(\d+) passed`)

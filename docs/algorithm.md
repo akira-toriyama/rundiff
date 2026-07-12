@@ -107,7 +107,7 @@ vitest suite paths; tsc / eslint diagnostic paths), the package import path for
 | A4 | parse + reconcile | the tool's sentinel ("run finished" line) missing, or the extracted failing count disagrees with the tool's own summary counts |
 | A5 | exit cross-check + cap | exit outside the tool's accepted set; `(exit==0) ⇎ (failing empty)`; signal exit; > 200 identities |
 | A6 | comparability (pair) | baseline, unparsed previous run, or a different tool ⇒ `fixed`/`new` null (`failing` survives) |
-| A7 | selection variance (pair) | a NAME-level selection flag (`go test -run`/`-skip`, pytest `-k`/`-m`/`--lf`, jest/vitest `-t`/`--onlyChanged`/`--changed`/`--shard`, a cargo name filter) in argv or the environment ⇒ `fixed`/`new` null — a rename or an unrelated edit silently deselects a still-failing test under identical argv, so a green run proves nothing |
+| A7 | selection variance (pair) | a NAME-level selection flag (`go test -run`/`-skip`, pytest `-k`/`-m`/`--lf`, jest/vitest `-t`/`--onlyChanged`/`--changed`/`--shard`, a cargo name filter) in argv or the environment — or an **opaque command string** rundiff cannot introspect (`npx -c`/`--call`, `python -c`) — ⇒ `fixed`/`new` null. A rename or an unrelated edit silently deselects a still-failing test under identical argv, so a green run proves nothing, and a selection flag can hide inside the opaque string |
 | A8 | strict accounting (pair) | any previously-failing identity lacking positive evidence in the current run ⇒ `fixed`/`new` null together |
 
 A8 is the load-bearing rule: **`fixed` is never inferred from absence.** For

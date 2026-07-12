@@ -127,6 +127,24 @@ var parserEnv = map[string][]string{
 	"pytest":  {"PYTEST_ADDOPTS"},
 }
 
+// EnvVarNames is the union of every var in parserEnv, sorted. The CLI reads
+// exactly these from the environment, so the two lists cannot drift: adding a
+// var to parserEnv automatically makes the CLI pass it.
+func EnvVarNames() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, names := range parserEnv {
+		for _, n := range names {
+			if !seen[n] {
+				seen[n] = true
+				out = append(out, n)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // gateArgs is what a parser's blockedFlags/selectionFlags see: the tool's own
 // argument tokens (launcher stripped) plus the tokens of the env vars that
 // tool owns. env is the raw environment (var name → value); nil is fine.
@@ -239,7 +257,7 @@ func Extract(argv []string, env map[string]string, prev *Run, cur Run, forceTool
 	// the current argv+env; the baseline's env is unobservable (not cached), so
 	// a selection dropped between runs can still yield a false `new` — the safe
 	// direction (New ⊆ Failing: the identity genuinely fails now).
-	if curR.p.selectionFlags(gateArgs(argv, env, curR.p)) {
+	if commandOpaque(argv) || curR.p.selectionFlags(gateArgs(argv, env, curR.p)) {
 		return claim
 	}
 

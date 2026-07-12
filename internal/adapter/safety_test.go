@@ -334,25 +334,108 @@ func TestHint_launcherPackageValueIsNotTheTool(t *testing.T) {
 	}
 }
 
-// vitest: an indented per-test `✓ name (...)` line must not mint file-level
-// pass evidence (its token is not path-shaped).
+// vitest: a per-test `✓ token (...)` line whose token is single-word AND
+// collides with a previously-failing FILE identity must not mint file-level
+// pass evidence — only a path-shaped token counts. (A single-token, paren-
+// following name is exactly what defeats the reVtPassList regex + reconciliation
+// otherwise; the looksLikeVitestFile guard is what actually blocks it.)
 func TestVitest_perTestCheckIsNotFileEvidence(t *testing.T) {
 	prev := Run{Exit: 1, Output: []byte(
-		" ❯ vtests/math.test.js (1 test | 1 failed)\n FAIL  vtests/math.test.js > multiplies\n" +
+		" ❯ config.js (1 test | 1 failed)\n FAIL  config.js > loads\n" +
 			" Test Files  1 failed (1)\n      Tests  1 failed (1)\n")}
-	// cur: the file is deleted; another file's expansion carries a per-test ✓
-	// whose name is not path-shaped.
+	// cur: config.js is gone (still broken, just deleted from the run); another
+	// file expands a per-test `✓ config.js (validates) ok` whose NAME token is
+	// literally "config.js" — path-shaped but a TEST name, at exit 1.
 	cur := Run{Exit: 1, Output: []byte(
-		" ❯ vtests/other.test.js (2 tests | 1 failed)\n" +
-			"   ✓ parses the header (edge) 1ms\n" +
-			" FAIL  vtests/other.test.js > writes\n" +
+		" ❯ other.test.js (2 tests | 1 failed)\n" +
+			"   ✓ config.js (edge)\n" +
+			" FAIL  other.test.js > writes\n" +
 			" Test Files  1 failed (1)\n      Tests  1 failed | 1 passed (2)\n")}
 	got := Extract([]string{"vitest", "run"}, nil, &prev, cur, "")
 	if got == nil {
 		return // abstention is safe
 	}
-	if got.Fixed != nil {
-		t.Errorf("fixed=%v want nil pair (a per-test ✓ is not file pass evidence)", got.Fixed)
+	// config.js is unaccounted in cur (not failing, no real file-pass line) ⇒
+	// the pair must be withheld; a false fixed:[config.js] is the bug.
+	for _, id := range got.Fixed {
+		if id == "config.js" {
+			t.Errorf("fixed=%v claims a file fixed off a per-test ✓ line", got.Fixed)
+		}
+	}
+}
+
+// A per-test ✓ whose token is NOT path-shaped is ignored regardless (guard +
+// shape). Directly exercises looksLikeVitestFile so the guard is covered.
+func TestVitest_looksLikeFile(t *testing.T) {
+	yes := []string{"vtests/math.test.js", "a.spec.ts", "x.js", "|alpha| vtests/m.test.js", "pkg/f.mjs"}
+	no := []string{"adds", "parses the header", "handles edge case", "multiplies"}
+	for _, s := range yes {
+		if !looksLikeVitestFile(s) {
+			t.Errorf("looksLikeVitestFile(%q) = false, want true", s)
+		}
+	}
+	for _, s := range no {
+		if looksLikeVitestFile(s) {
+			t.Errorf("looksLikeVitestFile(%q) = true, want false", s)
+		}
+	}
+}
+
+// npx/exec --call and python -c run an opaque command string that can hide a
+// selection flag; the cross-run pair must abstain.
+func TestExtract_opaqueCommandWithholdsPair(t *testing.T) {
+	// A vitest fail→"pass" where the previously-failing file now shows ✓
+	// because a -t inside the --call string deselected the broken test.
+	prev := loadCapture(t, "vitest", "fail")
+	pass := loadCapture(t, "vitest", "pass")
+	for _, argv := range [][]string{
+		{"npx", "-c", "vitest run -t /keep/"},
+		{"npx", "--call", "vitest run -t /keep/"},
+		{"pnpm", "exec", "-c", "vitest run -t /keep/"},
+	} {
+		got := Extract(argv, nil, &prev, pass, "")
+		if got != nil && got.Fixed != nil {
+			t.Errorf("argv=%v: fixed=%v want nil pair (opaque command may hide a selection flag)", argv, got.Fixed)
+		}
+	}
+	// python -c running pytest is opaque too.
+	pyPrev := loadCapture(t, "pytest", "fail")
+	pyPass := loadCapture(t, "pytest", "pass")
+	got := Extract([]string{"python", "-c", "import pytest,sys; sys.exit(pytest.main(['-k','keep']))"}, nil, &pyPrev, pyPass, "")
+	if got != nil && got.Fixed != nil {
+		t.Errorf("python -c: fixed=%v want nil pair", got.Fixed)
+	}
+}
+
+// Glued `python -mpytest` must still route pytest's own selection flags to the
+// gate (they must not be dropped with the launcher).
+func TestPytest_gluedDashMRoutesSelection(t *testing.T) {
+	prev := loadCapture(t, "pytest", "fail")
+	pass := loadCapture(t, "pytest", "pass")
+	// -k present (glued -mpytest) ⇒ selection ⇒ pair withheld.
+	if got := Extract([]string{"python", "-mpytest", "-k", "mul"}, nil, &prev, pass, ""); got != nil && got.Fixed != nil {
+		t.Errorf("glued -mpytest -k: fixed=%v want nil pair", got.Fixed)
+	}
+	// No selection ⇒ glued form still claims fixed (not dropped as launcher).
+	got := Extract([]string{"python", "-mpytest"}, nil, &prev, pass, "")
+	if got == nil || !reflect.DeepEqual(got.Fixed, []string{"tests/test_math.py"}) {
+		t.Errorf("glued -mpytest fail→pass: got %+v want fixed=[tests/test_math.py]", got)
+	}
+}
+
+// python interpreter value-flags (-W error, -X dev) before -m must not eat the
+// module or leak into pytest's gate — the legit fix still claims.
+func TestPytest_interpreterValueFlagsStillClaim(t *testing.T) {
+	prev := loadCapture(t, "pytest", "fail")
+	pass := loadCapture(t, "pytest", "pass")
+	for _, argv := range [][]string{
+		{"python", "-W", "error", "-m", "pytest"},
+		{"python", "-X", "dev", "-m", "pytest"},
+	} {
+		got := Extract(argv, nil, &prev, pass, "")
+		if got == nil || !reflect.DeepEqual(got.Fixed, []string{"tests/test_math.py"}) {
+			t.Errorf("argv=%v: got %+v want fixed=[tests/test_math.py]", argv, got)
+		}
 	}
 }
 

@@ -63,25 +63,64 @@ func unwrapExec(bases, rest []string) ([]string, []string) {
 	return bases, nil
 }
 
+// pythonValueFlags are interpreter flags that consume a SEPARATE-token value —
+// that value is not the tool/script and must be skipped, not read as one.
+var pythonValueFlags = map[string]bool{"-W": true, "-X": true, "--check-hash-based-pycs": true}
+
 func unwrapPython(bases, rest []string) ([]string, []string) {
 	for i := 0; i < len(rest); i++ {
 		a := rest[i]
-		if a == "-m" && i+1 < len(rest) {
+		switch {
+		case a == "-m" && i+1 < len(rest):
 			bases = append(bases, path.Base(rest[i+1]))
 			return bases, rest[i+2:]
+		case strings.HasPrefix(a, "-m") && len(a) > 2:
+			bases = append(bases, path.Base(a[2:])) // glued -mMODULE
+			return bases, rest[i+1:]
+		case a == "-c" || (strings.HasPrefix(a, "-c") && len(a) > 2):
+			return bases, nil // python -c '<code>': opaque (see commandOpaque)
+		case pythonValueFlags[a]:
+			i++ // skip the flag's separate-token value (-W error, -X dev)
+		case strings.HasPrefix(a, "-"):
+			continue // valueless/glued interpreter flag (-B, -O, -Werror)
+		default:
+			// A non-flag before -m is a script path (python runner.py …): the
+			// script is the command, its own -m/args are not the interpreter's.
+			bases = append(bases, path.Base(a))
+			return bases, rest[i+1:]
 		}
-		if a == "-c" {
-			return bases, nil // python -c '<code>': not a tool we recognize
-		}
-		if strings.HasPrefix(a, "-") {
-			continue // interpreter flag (-B, -O, …)
-		}
-		// A non-flag before -m is a script path (python runner.py …): the
-		// script is the command, its own -m/args are not the interpreter's.
-		bases = append(bases, path.Base(a))
-		return bases, rest[i+1:]
 	}
 	return bases, nil
+}
+
+// commandOpaque reports whether argv runs an arbitrary command STRING that
+// rundiff cannot introspect: `npx -c/--call '<shell>'`, `npm|pnpm|yarn|bun
+// exec -c '<shell>'`, or `python -c '<code>'`. A tool's own selection flag can
+// hide inside that string (npx -c 'vitest -t /x/'), invisible to the gates, so
+// a cross-run claim must abstain — the failing set (from printed lines) stays
+// sound, only the fixed/new pair is withheld.
+func commandOpaque(argv []string) bool {
+	if len(argv) == 0 {
+		return false
+	}
+	switch path.Base(argv[0]) {
+	case "npx", "pnpx", "bunx":
+		return hasFlag(argv, "-c", "--call")
+	case "npm", "pnpm", "yarn", "bun":
+		return len(argv) > 1 && (argv[1] == "exec" || argv[1] == "dlx") && hasFlag(argv, "-c", "--call")
+	case "python", "python3":
+		for _, a := range argv[1:] {
+			switch {
+			case a == "-m" || (strings.HasPrefix(a, "-m") && len(a) > 2):
+				return false // reached the module: any later -c is its config flag, not python's
+			case a == "-c" || (strings.HasPrefix(a, "-c") && len(a) > 2):
+				return true
+			case !strings.HasPrefix(a, "-"):
+				return false // a script path: later -c is the script's
+			}
+		}
+	}
+	return false
 }
 
 // invokes reports whether argv's command position (launcher-unwrapped) names
