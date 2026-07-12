@@ -1,0 +1,8 @@
+=== RUN   TestAdd
+--- PASS: TestAdd (0.00s)
+=== RUN   TestMul
+--- PASS: TestMul (0.00s)
+=== RUN   TestMulZero
+--- PASS: TestMulZero (0.00s)
+PASS
+ok  	example.com/fixture/calc	0.203s

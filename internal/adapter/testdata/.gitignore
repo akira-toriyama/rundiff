@@ -1,0 +1,3 @@
+# Real captured tool transcripts are test data, not build artifacts —
+# un-ignore them from the repo-root *.out rule.
+!*.out
