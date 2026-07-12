@@ -1,0 +1,6 @@
+--- FAIL: TestMul (0.00s)
+    calc_test.go:13: Mul(2,3) = 6, want 7
+FAIL
+FAIL	example.com/fixture/calc	0.494s
+ok  	example.com/fixture/str	0.844s
+FAIL

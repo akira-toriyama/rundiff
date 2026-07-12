@@ -36,7 +36,7 @@ func TestTransition_matrix(t *testing.T) {
 	for _, c := range cases {
 		prev := run(c.prevExit, "a", "b", "c")
 		cur := run(c.curExit, "a", "b", "c")
-		got := Diff(&prev, cur, 0, "k", Options{})
+		got := Diff(&prev, cur, Meta{Key: "k"}, Options{})
 		if got.Transition != string(c.want) {
 			t.Errorf("prev=%d cur=%d: transition=%s want=%s", c.prevExit, c.curExit, got.Transition, c.want)
 		}
@@ -45,7 +45,7 @@ func TestTransition_matrix(t *testing.T) {
 
 func TestBaseline_nilPrev(t *testing.T) {
 	cur := run(0, "hello", "world", "third")
-	r := Diff(nil, cur, 0, "k", Options{})
+	r := Diff(nil, cur, Meta{Key: "k"}, Options{})
 	if r.Transition != string(TransitionBaseline) {
 		t.Errorf("transition=%s want baseline", r.Transition)
 	}
@@ -68,7 +68,7 @@ func TestBaseline_nilPrev(t *testing.T) {
 func TestIdentity_zeroDelta(t *testing.T) {
 	out := bigRun(0, "line one", "line two", "line three")
 	prev := out
-	r := Diff(&prev, out, 5, "k", Options{})
+	r := Diff(&prev, out, Meta{AgeSeconds: 5, Key: "k"}, Options{})
 	if r.Transition != string(TransitionStillPassing) {
 		t.Errorf("transition=%s want still_passing", r.Transition)
 	}
@@ -89,7 +89,7 @@ func TestIdentity_zeroDelta(t *testing.T) {
 func TestConservation(t *testing.T) {
 	prev := bigRun(1, "keep1", "keep2", "gone1", "gone2")
 	cur := bigRun(1, "keep1", "keep2", "new1")
-	r := Diff(&prev, cur, 0, "k", Options{})
+	r := Diff(&prev, cur, Meta{Key: "k"}, Options{})
 	if *r.Unchanged+*r.Removed != *r.TotalPrev {
 		t.Errorf("unchanged(%d)+removed(%d) != total_prev(%d)", *r.Unchanged, *r.Removed, *r.TotalPrev)
 	}
@@ -102,7 +102,7 @@ func TestMultiset_duplicates(t *testing.T) {
 	// "dup" appears 3× in prev, 5× in cur → unchanged 3, added 2, removed 0.
 	prev := bigRun(0, "dup", "dup", "dup")
 	cur := bigRun(0, "dup", "dup", "dup", "dup", "dup")
-	r := Diff(&prev, cur, 0, "k", Options{})
+	r := Diff(&prev, cur, Meta{Key: "k"}, Options{})
 	// The filler is identical, so isolate the "dup" contribution via totals.
 	if *r.Added != 2 {
 		t.Errorf("added=%d want 2 (3→5 duplicates)", *r.Added)
@@ -117,8 +117,8 @@ func TestOrderIndependence_counts(t *testing.T) {
 	// Same lines, permuted, plus one real change (gamma→delta).
 	curA := bigRun(1, "alpha", "beta", "delta")
 	curB := bigRun(1, "delta", "beta", "alpha")
-	ra := Diff(&prev, curA, 0, "k", Options{})
-	rb := Diff(&prev, curB, 0, "k", Options{})
+	ra := Diff(&prev, curA, Meta{Key: "k"}, Options{})
+	rb := Diff(&prev, curB, Meta{Key: "k"}, Options{})
 	if *ra.Added != *rb.Added || *ra.Removed != *rb.Removed || *ra.Unchanged != *rb.Unchanged {
 		t.Errorf("permutation changed counts: A(+%d -%d ~%d) B(+%d -%d ~%d)",
 			*ra.Added, *ra.Removed, *ra.Unchanged, *rb.Added, *rb.Removed, *rb.Unchanged)
@@ -130,8 +130,8 @@ func TestOrderIndependence_counts(t *testing.T) {
 
 func TestOrderIndependence_renderedBodyStable(t *testing.T) {
 	prev := bigRun(1, "alpha", "beta", "gamma")
-	curA := Diff(&prev, bigRun(1, "delta", "epsilon", "beta", "alpha", "gamma"), 0, "k", Options{JSON: true})
-	curB := Diff(&prev, bigRun(1, "gamma", "alpha", "epsilon", "beta", "delta"), 0, "k", Options{JSON: true})
+	curA := Diff(&prev, bigRun(1, "delta", "epsilon", "beta", "alpha", "gamma"), Meta{Key: "k"}, Options{JSON: true})
+	curB := Diff(&prev, bigRun(1, "gamma", "alpha", "epsilon", "beta", "delta"), Meta{Key: "k"}, Options{JSON: true})
 	lineA, _ := Render(curA, Options{JSON: true})
 	lineB, _ := Render(curB, Options{JSON: true})
 	if string(lineA) != string(lineB) {
@@ -142,8 +142,8 @@ func TestOrderIndependence_renderedBodyStable(t *testing.T) {
 func TestSymmetry(t *testing.T) {
 	a := bigRun(0, "x", "y", "z")
 	b := bigRun(0, "x", "w")
-	ab := Diff(&a, b, 0, "k", Options{})
-	ba := Diff(&b, a, 0, "k", Options{})
+	ab := Diff(&a, b, Meta{Key: "k"}, Options{})
+	ba := Diff(&b, a, Meta{Key: "k"}, Options{})
 	if *ab.Added != *ba.Removed || *ab.Removed != *ba.Added || *ab.Unchanged != *ba.Unchanged {
 		t.Errorf("not symmetric: ab(+%d -%d ~%d) ba(+%d -%d ~%d)",
 			*ab.Added, *ab.Removed, *ab.Unchanged, *ba.Added, *ba.Removed, *ba.Unchanged)
@@ -155,7 +155,7 @@ func TestDeterminism_sameInputSameBytes(t *testing.T) {
 	cur := bigRun(1, "one", "three")
 	var first string
 	for i := 0; i < 20; i++ {
-		r := Diff(&prev, cur, 7, "abc123", Options{JSON: true})
+		r := Diff(&prev, cur, Meta{AgeSeconds: 7, Key: "abc123"}, Options{JSON: true})
 		line, _ := Render(r, Options{JSON: true})
 		if i == 0 {
 			first = string(line)
@@ -170,7 +170,7 @@ func TestDeterminism_sameInputSameBytes(t *testing.T) {
 func TestBaselineAge_clampedByCaller_passthrough(t *testing.T) {
 	prev := run(0, "a", "b", "c")
 	cur := run(0, "a", "b", "c")
-	r := Diff(&prev, cur, 42, "k", Options{})
+	r := Diff(&prev, cur, Meta{AgeSeconds: 42, Key: "k"}, Options{})
 	if r.BaselineAgeS == nil || *r.BaselineAgeS != 42 {
 		t.Errorf("baseline_age_s = %v want 42", r.BaselineAgeS)
 	}

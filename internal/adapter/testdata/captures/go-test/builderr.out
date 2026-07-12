@@ -1,0 +1,5 @@
+# example.com/fixture/calc [example.com/fixture/calc.test]
+calc/calc_test.go:12:12: undefined: Mull
+FAIL	example.com/fixture/calc [build failed]
+ok  	example.com/fixture/str	(cached)
+FAIL

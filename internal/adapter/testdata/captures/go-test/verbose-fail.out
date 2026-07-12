@@ -1,0 +1,10 @@
+=== RUN   TestAdd
+--- PASS: TestAdd (0.00s)
+=== RUN   TestMul
+    calc_test.go:13: Mul(2,3) = 6, want 7
+--- FAIL: TestMul (0.00s)
+=== RUN   TestMulZero
+--- PASS: TestMulZero (0.00s)
+FAIL
+FAIL	example.com/fixture/calc	0.297s
+FAIL

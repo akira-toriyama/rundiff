@@ -1,0 +1,22 @@
+PASS __tests__/str.test.js
+FAIL __tests__/math.test.js
+  ● multiplies
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 7
+    Received: 6
+
+      1 | const { add, mul } = require('../src/math');
+      2 | test('adds', () => { expect(add(2, 3)).toBe(5); });
+    > 3 | test('multiplies', () => { expect(mul(2, 3)).toBe(7); });
+        |                                              ^
+      4 |
+
+      at Object.toBe (__tests__/math.test.js:3:46)
+
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       1 failed, 2 passed, 3 total
+Snapshots:   0 total
+Time:        0.354 s
+Ran all test suites.

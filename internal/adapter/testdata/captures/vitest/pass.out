@@ -1,0 +1,11 @@
+
+ RUN  v3.2.7 /home/dev/fixture
+
+ ✓ vtests/str.test.js (1 test) 1ms
+ ✓ vtests/math.test.js (2 tests) 1ms
+
+ Test Files  2 passed (2)
+      Tests  3 passed (3)
+   Start at  10:14:47
+   Duration  179ms (transform 13ms, setup 0ms, collect 14ms, tests 2ms, environment 0ms, prepare 88ms)
+

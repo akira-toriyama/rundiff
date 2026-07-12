@@ -1,0 +1,19 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/dev/fixture
+collected 4 items
+
+tests/test_math.py .F.                                                   [ 75%]
+tests/test_str.py .                                                      [100%]
+
+=================================== FAILURES ===================================
+___________________________________ test_mul ___________________________________
+
+    def test_mul():
+>       assert 2 * 3 == 7
+E       assert (2 * 3) == 7
+
+tests/test_math.py:8: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_math.py::test_mul - assert (2 * 3) == 7
+========================= 1 failed, 3 passed in 0.01s ==========================

@@ -41,7 +41,7 @@ func FuzzDiff(f *testing.F) {
 	f.Fuzz(func(t *testing.T, prevOut []byte, prevExit int, curOut []byte, curExit int) {
 		prev := &Run{Exit: prevExit, Output: prevOut}
 		cur := Run{Exit: curExit, Output: curOut}
-		r := Diff(prev, cur, 0, "k", Options{})
+		r := Diff(prev, cur, Meta{Key: "k"}, Options{})
 
 		// Render must never panic either, in both modes.
 		_, _ = Render(r, Options{})

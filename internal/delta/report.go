@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"sort"
 	"strings"
 )
 
@@ -31,6 +33,37 @@ func (r *Report) setReason(reason string) {
 	r.DegradeReason = &reason
 }
 
+// setClaim copies the injected file-level claim into the line-1 fields,
+// defensively re-establishing the contract whatever the caller passed: slices
+// are copied (purity — the caller's arrays are never mutated), sorted and
+// deduped (determinism), Fixed/New are nil-paired, and a baseline never carries
+// a cross-run claim. nil stays nil — for these fields null is semantic ("no
+// claim"), distinct from empty ("confidently none").
+func (r *Report) setClaim(c *FileClaim, baseline bool) {
+	if c == nil {
+		return
+	}
+	tool := c.Tool
+	r.Tool = &tool
+	r.Failing = sortedCopy(c.Failing)
+	if baseline || c.Fixed == nil || c.New == nil {
+		return
+	}
+	r.Fixed = sortedCopy(c.Fixed)
+	r.New = sortedCopy(c.New)
+}
+
+// sortedCopy returns a sorted, deduped copy; nil in ⇒ nil out, empty ⇒ empty.
+func sortedCopy(s []string) []string {
+	if s == nil {
+		return nil
+	}
+	out := make([]string, 0, len(s))
+	out = append(out, s...)
+	sort.Strings(out)
+	return slices.Compact(out)
+}
+
 // body renders the bounded full current output — used for baseline, degrade, and
 // --full. In --json mode it becomes the "body" string; otherwise a text block
 // under a header.
@@ -46,6 +79,12 @@ func (r *Report) body(output []byte, opt Options) {
 	}
 	var b strings.Builder
 	b.WriteString(r.headerFull())
+	// The run just lost its detail view (baseline/degrade/--full), so a known
+	// failing list is the signal an agent reads first.
+	if len(r.Failing) > 0 {
+		b.WriteString("\n")
+		b.WriteString(r.claimLine("failing", r.Failing))
+	}
 	for _, l := range lines {
 		b.WriteByte('\n')
 		b.WriteString(l)
@@ -69,6 +108,17 @@ func (r *Report) delta(dc diffCounts, opt Options) {
 	}
 	var b strings.Builder
 	b.WriteString(r.headerDelta())
+	// Non-empty cross-run claims render before the line delta — they are the
+	// agent's first read. Empty/absent claims stay silent (the JSON carries the
+	// null-vs-[] distinction).
+	if len(r.Fixed) > 0 {
+		b.WriteString("\n")
+		b.WriteString(r.claimLine("fixed", r.Fixed))
+	}
+	if len(r.New) > 0 {
+		b.WriteString("\n")
+		b.WriteString(r.claimLine("new", r.New))
+	}
 	for _, l := range dc.removedLines {
 		b.WriteString("\n- ")
 		b.WriteString(clip(l))
@@ -78,6 +128,22 @@ func (r *Report) delta(dc diffCounts, opt Options) {
 		b.WriteString(clip(l))
 	}
 	r.textBody = b.String()
+}
+
+// claimLine renders one file-level claim list, clipped like any displayed
+// line. The clip only shortens the TEXT rendering — the JSON line always
+// carries the full arrays — and it is surfaced: a clipped claim line sets
+// Truncated, and clip's trailing marker shows the cut.
+func (r *Report) claimLine(label string, ids []string) string {
+	tool := ""
+	if r.Tool != nil {
+		tool = " (" + *r.Tool + ")"
+	}
+	line := label + tool + ": " + strings.Join(ids, ", ")
+	if len(line) > maxDisplayLine {
+		r.Truncated = true
+	}
+	return clip(line)
 }
 
 const maxDisplayLine = 2048 // cap a single displayed line; matching uses the full line
@@ -159,6 +225,16 @@ type lineCore struct {
 	BaselineAgeS  *int     `json:"baseline_age_s"`
 	Normalized    bool     `json:"normalized"`
 	Truncated     bool     `json:"truncated"`
+
+	// File-level claim (internal/adapter). For these four fields null is
+	// semantic — "no claim" — so nil is deliberately NOT coerced to [] (the
+	// inverse of the nonNil habit): null ≠ [] is the contract. Failing is the
+	// current run's complete failing identities; Fixed/New are the cross-run
+	// claim and are null or non-null together.
+	Tool    *string  `json:"tool"`
+	Failing []string `json:"failing"`
+	Fixed   []string `json:"fixed"`
+	New     []string `json:"new"`
 }
 
 func (r Report) core() lineCore { return r.lineCore }

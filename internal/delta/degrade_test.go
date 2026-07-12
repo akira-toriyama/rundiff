@@ -10,7 +10,7 @@ import (
 func TestDegrade_binaryNullsCounts(t *testing.T) {
 	prev := Run{Exit: 0, Output: []byte("normal text\nsecond line\nthird\n")}
 	cur := Run{Exit: 0, Output: append([]byte("has a nul\x00 byte\n"), bytes.Repeat([]byte("x\n"), 5)...)}
-	r := Diff(&prev, cur, 0, "k", Options{})
+	r := Diff(&prev, cur, Meta{Key: "k"}, Options{})
 	if !r.Degraded || r.DegradeReason == nil || *r.DegradeReason != reasonBinary {
 		t.Fatalf("degraded=%v reason=%v want binary", r.Degraded, r.DegradeReason)
 	}
@@ -27,7 +27,7 @@ func TestDegrade_tooLargeBytesNullsCounts(t *testing.T) {
 	big := bytes.Repeat([]byte("line of text here\n"), 600_000) // > 8 MiB and > 50k lines
 	prev := Run{Exit: 0, Output: []byte("small\nbaseline\nhere\n")}
 	cur := Run{Exit: 0, Output: big}
-	r := Diff(&prev, cur, 0, "k", Options{})
+	r := Diff(&prev, cur, Meta{Key: "k"}, Options{})
 	if !r.Degraded || *r.DegradeReason != reasonTooLarge {
 		t.Fatalf("reason=%v want too_large", r.DegradeReason)
 	}
@@ -39,7 +39,7 @@ func TestDegrade_tooLargeBytesNullsCounts(t *testing.T) {
 func TestDegrade_interleaveLongLine(t *testing.T) {
 	prev := Run{Exit: 0, Output: []byte("a\nb\nc\nd\n")}
 	cur := Run{Exit: 0, Output: append(append([]byte("a\n"), bytes.Repeat([]byte("x"), maxLineBytes+1)...), []byte("\nb\n")...)}
-	r := Diff(&prev, cur, 0, "k", Options{})
+	r := Diff(&prev, cur, Meta{Key: "k"}, Options{})
 	if !r.Degraded || *r.DegradeReason != reasonInterleave {
 		t.Fatalf("reason=%v want interleave", r.DegradeReason)
 	}
@@ -51,7 +51,7 @@ func TestDegrade_interleaveLongLine(t *testing.T) {
 func TestDegrade_smallOutputKeepsRealCounts(t *testing.T) {
 	prev := run(1, "a", "b", "c")
 	cur := run(1, "a", "X", "c")
-	r := Diff(&prev, cur, 0, "k", Options{})
+	r := Diff(&prev, cur, Meta{Key: "k"}, Options{})
 	if !r.Degraded || *r.DegradeReason != reasonSmall {
 		t.Fatalf("reason=%v want small_output", r.DegradeReason)
 	}
@@ -75,7 +75,7 @@ func TestDegrade_highChurn(t *testing.T) {
 	}
 	prev := Run{Exit: 1, Output: []byte(prevB.String())}
 	cur := Run{Exit: 1, Output: []byte(curB.String())}
-	r := Diff(&prev, cur, 0, "k", Options{})
+	r := Diff(&prev, cur, Meta{Key: "k"}, Options{})
 	if !r.Degraded || *r.DegradeReason != reasonHighChurn {
 		t.Fatalf("reason=%v want high_churn (churn=%v)", r.DegradeReason, deref(r.Churn))
 	}
@@ -100,7 +100,7 @@ func TestDegrade_tooLargeByDeltaCountKeepsCounts(t *testing.T) {
 	}
 	prev := Run{Exit: 1, Output: []byte(prevB.String())}
 	cur := Run{Exit: 1, Output: []byte(curB.String())}
-	r := Diff(&prev, cur, 0, "k", Options{})
+	r := Diff(&prev, cur, Meta{Key: "k"}, Options{})
 	if !r.Degraded || r.DegradeReason == nil || *r.DegradeReason != reasonTooLarge {
 		t.Fatalf("reason=%v want too_large (G6)", r.DegradeReason)
 	}
@@ -115,7 +115,7 @@ func TestDegrade_tooLargeByDeltaCountKeepsCounts(t *testing.T) {
 func TestDegrade_notTriggeredForModestDelta(t *testing.T) {
 	prev := bigRun(0, "a", "b", "c", "d")
 	cur := bigRun(0, "a", "b", "c", "d", "e") // one added line among lots of filler
-	r := Diff(&prev, cur, 0, "k", Options{})
+	r := Diff(&prev, cur, Meta{Key: "k"}, Options{})
 	if r.Degraded {
 		t.Errorf("a small trusted delta should not degrade (reason=%v)", r.DegradeReason)
 	}
@@ -137,7 +137,7 @@ func TestDegrade_ansiColorNotBinary(t *testing.T) {
 	curStr := strings.Replace(curB.String(), "\x1b[32mPASS\x1b[0m t7", "\x1b[31mFAIL\x1b[0m t7", 1)
 	prev := Run{Exit: 0, Output: []byte(prevB.String())}
 	cur := Run{Exit: 1, Output: []byte(curStr)}
-	r := Diff(&prev, cur, 0, "k", Options{})
+	r := Diff(&prev, cur, Meta{Key: "k"}, Options{})
 	if r.Degraded && *r.DegradeReason == reasonBinary {
 		t.Fatalf("colored output wrongly degraded as binary")
 	}
@@ -152,10 +152,10 @@ func TestDegrade_churnZeroHonored(t *testing.T) {
 	// float64 zero would have collided with the unset default and silently used 0.5.
 	prev := bigRun(0, "a", "b", "c", "d")
 	cur := bigRun(0, "a", "b", "c", "e") // one changed line among constant filler
-	if def := Diff(&prev, cur, 0, "k", Options{}); def.Degraded && *def.DegradeReason == reasonHighChurn {
+	if def := Diff(&prev, cur, Meta{Key: "k"}, Options{}); def.Degraded && *def.DegradeReason == reasonHighChurn {
 		t.Fatal("precondition: this delta should not high_churn-degrade at the default 0.5")
 	}
-	got := Diff(&prev, cur, 0, "k", Options{ChurnLimit: fptr(0)})
+	got := Diff(&prev, cur, Meta{Key: "k"}, Options{ChurnLimit: fptr(0)})
 	if !got.Degraded || got.DegradeReason == nil || *got.DegradeReason != reasonHighChurn {
 		t.Fatalf("--churn 0 should degrade on any change: degraded=%v reason=%v", got.Degraded, got.DegradeReason)
 	}
@@ -186,7 +186,7 @@ func TestDegrade_normalizationUncertain_fires(t *testing.T) {
 	}
 	prev := Run{Exit: 0, Output: []byte(prevB.String())}
 	cur := Run{Exit: 0, Output: []byte(curB.String())}
-	r := Diff(&prev, cur, 0, "k", Options{})
+	r := Diff(&prev, cur, Meta{Key: "k"}, Options{})
 	if !r.Degraded || r.DegradeReason == nil || *r.DegradeReason != reasonNormUncertain {
 		t.Fatalf("degraded=%v reason=%v want normalization_uncertain (churn=%v added=%v)",
 			r.Degraded, r.DegradeReason, deref(r.Churn), r.Added)
@@ -208,7 +208,7 @@ func TestDegrade_normalizationUncertain_doesNotFireOnGenuineChange(t *testing.T)
 	}
 	prev := Run{Exit: 1, Output: []byte(prevB.String())}
 	cur := Run{Exit: 1, Output: []byte(curB.String())}
-	r := Diff(&prev, cur, 0, "k", Options{})
+	r := Diff(&prev, cur, Meta{Key: "k"}, Options{})
 	if r.Degraded && r.DegradeReason != nil && *r.DegradeReason == reasonNormUncertain {
 		t.Errorf("genuine integer changes must not be flagged normalization_uncertain")
 	}
@@ -223,7 +223,7 @@ func TestDegrade_normalizationUncertain_skipsTinyDelta(t *testing.T) {
 	curB.WriteString("ptr 0xBBBB0001\nptr 0xBBBB0002\n")
 	prev := Run{Exit: 0, Output: []byte(prevB.String())}
 	cur := Run{Exit: 0, Output: []byte(curB.String())}
-	r := Diff(&prev, cur, 0, "k", Options{})
+	r := Diff(&prev, cur, Meta{Key: "k"}, Options{})
 	if r.Degraded && r.DegradeReason != nil && *r.DegradeReason == reasonNormUncertain {
 		t.Errorf("a sub-threshold delta must not be flagged normalization_uncertain")
 	}
@@ -244,7 +244,7 @@ func TestDegrade_normalizationUncertain_realChangeSurvivesInBody(t *testing.T) {
 	curB.WriteString("FATAL: 7 errors\n")
 	prev := Run{Exit: 0, Output: []byte(prevB.String())}
 	cur := Run{Exit: 1, Output: []byte(curB.String())}
-	r := Diff(&prev, cur, 0, "k", Options{})
+	r := Diff(&prev, cur, Meta{Key: "k"}, Options{})
 	if !r.Degraded || r.DegradeReason == nil || *r.DegradeReason != reasonNormUncertain {
 		t.Fatalf("expected normalization_uncertain, got degraded=%v reason=%v", r.Degraded, r.DegradeReason)
 	}
@@ -257,7 +257,7 @@ func TestDegrade_normalizationUncertain_realChangeSurvivesInBody(t *testing.T) {
 func TestDegrade_bothEmpty(t *testing.T) {
 	prev := Run{Exit: 0, Output: nil}
 	cur := Run{Exit: 0, Output: []byte{}}
-	r := Diff(&prev, cur, 0, "k", Options{}) // must not panic; degrades small
+	r := Diff(&prev, cur, Meta{Key: "k"}, Options{}) // must not panic; degrades small
 	if !r.Degraded {
 		t.Error("empty vs empty should degrade (small_output)")
 	}

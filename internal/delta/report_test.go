@@ -17,7 +17,7 @@ func TestBoundedFull_truncatesWithMarker(t *testing.T) {
 	}
 	out := []byte(strings.Join(lines, "\n") + "\n")
 
-	r := Diff(nil, Run{Output: out, Exit: 0}, 0, "k", Options{})
+	r := Diff(nil, Run{Output: out, Exit: 0}, Meta{Key: "k"}, Options{})
 	if !r.Truncated {
 		t.Error("a 300-line baseline (> MaxBodyLines) should set Truncated")
 	}
@@ -49,7 +49,7 @@ func TestDelta_maxDeltaLinesCapsArraysButCountsStayTrue(t *testing.T) {
 	prev := Run{Output: []byte(strings.Join(prevLines, "\n") + "\n"), Exit: 0}
 	cur := Run{Output: []byte(strings.Join(curLines, "\n") + "\n"), Exit: 0}
 
-	r := Diff(&prev, cur, 0, "k", Options{MaxDeltaLines: 2, JSON: true})
+	r := Diff(&prev, cur, Meta{Key: "k"}, Options{MaxDeltaLines: 2, JSON: true})
 	if r.Degraded {
 		t.Fatalf("should be a trusted delta, got degraded (reason=%v)", *r.DegradeReason)
 	}
