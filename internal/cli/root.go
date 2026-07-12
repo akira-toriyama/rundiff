@@ -173,7 +173,8 @@ func runWrap(cmd *cobra.Command, args []string, f flags) error {
 	// explicit `--churn 0` reaches the core as 0 (degrade on any change) instead
 	// of colliding with the unset sentinel.
 	opt := delta.Options{JSON: f.json, Raw: f.raw, Full: f.full, ChurnLimit: &f.churn}
-	rep := delta.Diff(prev, delta.Run{Output: res.Output, Exit: res.Exit}, ageSeconds, key[:12], opt)
+	rep := delta.Diff(prev, delta.Run{Output: res.Output, Exit: res.Exit},
+		delta.Meta{AgeSeconds: ageSeconds, Key: key[:12]}, opt)
 	line, body := delta.Render(rep, opt)
 
 	out := cmd.OutOrStdout()

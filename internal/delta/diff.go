@@ -21,6 +21,30 @@ type Run struct {
 	Exit   int
 }
 
+// Meta carries the injected facts about the world a Diff cannot observe itself
+// (it reads no clock, does no I/O): the baseline age, the cache key, and — when
+// the CLI's adapter recognized the wrapped tool — the file-level claim. Facts
+// live here; behavior toggles live in Options.
+type Meta struct {
+	AgeSeconds int    // now minus baseline creation, clamped ≥0 by the caller
+	Key        string // 12-hex cache-key prefix
+	FileClaim  *FileClaim
+}
+
+// FileClaim is the file-level failure claim computed by internal/adapter and
+// injected as a value (delta and adapter are both import-free leaves — they
+// mirror shapes, never import each other). nil = no claim. Failing is the
+// current run's complete failing identities; Fixed/New are the cross-run claim
+// and are nil or non-nil together. nil and empty differ: nil = "no claim",
+// empty = "confidently none". Diff defensively sorts, dedupes and re-checks the
+// pairing so the rendered output is deterministic whatever the caller passed.
+type FileClaim struct {
+	Tool    string
+	Failing []string
+	Fixed   []string
+	New     []string
+}
+
 // Options tunes a single Diff. Zero value is the safe default set (all
 // default-ON normalization active, no opt-in rules, churn limit 0.5, budgets
 // filled in by withDefaults).
@@ -183,19 +207,19 @@ func churn(added, removed, unchanged int) float64 {
 }
 
 // Diff computes the report of cur against prev. prev == nil ⇒ baseline (first
-// run for this key). ageSeconds is now-minus-baseline-creation (already clamped
-// ≥0 by the caller); key is the 12-hex cache-key prefix. Diff is pure: same
-// inputs ⇒ byte-identical Report.
-func Diff(prev *Run, cur Run, ageSeconds int, key string, opt Options) Report {
+// run for this key). meta carries the injected facts (age, key, file claim).
+// Diff is pure: same inputs ⇒ byte-identical Report.
+func Diff(prev *Run, cur Run, meta Meta, opt Options) Report {
 	opt = opt.withDefaults()
 	n := newNormalizer(opt)
 
 	r := Report{lineCore: lineCore{
 		V:          schemaVersion,
-		Key:        key,
+		Key:        meta.Key,
 		Exit:       cur.Exit,
 		Normalized: !opt.Raw,
 	}}
+	r.setClaim(meta.FileClaim, prev == nil)
 
 	if prev == nil {
 		r.Transition = string(TransitionBaseline)
@@ -205,7 +229,7 @@ func Diff(prev *Run, cur Run, ageSeconds int, key string, opt Options) Report {
 
 	prevExit := prev.Exit
 	r.PrevExit = &prevExit
-	age := ageSeconds
+	age := meta.AgeSeconds
 	r.BaselineAgeS = &age
 	tr := transition(&prevExit, cur.Exit)
 	r.Transition = string(tr)

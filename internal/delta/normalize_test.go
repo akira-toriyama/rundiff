@@ -142,7 +142,7 @@ func TestNormalize_realChangeSurvivesNoise(t *testing.T) {
 	for _, c := range cases {
 		p := bigRun(1, c.prev)
 		cur := bigRun(1, c.cur)
-		r := Diff(&p, cur, 0, "k", Options{})
+		r := Diff(&p, cur, Meta{Key: "k"}, Options{})
 		if *r.Added < 1 || *r.Removed < 1 {
 			t.Errorf("real change hidden by normalization:\n  prev=%q\n  cur =%q\n  added=%d removed=%d",
 				c.prev, c.cur, *r.Added, *r.Removed)
