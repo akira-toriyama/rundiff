@@ -11,9 +11,12 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"slices"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/akira-toriyama/rundiff/internal/adapter"
 	"github.com/akira-toriyama/rundiff/internal/cache"
 	"github.com/akira-toriyama/rundiff/internal/delta"
 	"github.com/akira-toriyama/rundiff/internal/runner"
@@ -78,6 +81,7 @@ type flags struct {
 	raw   bool
 	full  bool
 	churn float64
+	tool  string
 }
 
 func newRootCmd() *cobra.Command {
@@ -118,6 +122,8 @@ func newRootCmd() *cobra.Command {
 	root.Flags().BoolVar(&f.raw, "raw", false, "compare raw lines with no noise-cancelling normalization")
 	root.Flags().BoolVar(&f.full, "full", false, "show the bounded full current output as the body, even when a trusted delta exists")
 	root.Flags().Float64Var(&f.churn, "churn", 0.5, "degrade to full output when the changed fraction reaches this (0..1)")
+	root.Flags().StringVar(&f.tool, "tool", "",
+		"force ("+strings.Join(adapter.Tools(), "|")+") or disable (none) the file-level failure adapter; default: auto-detect (abstains when unsure)")
 
 	root.Version = versionLine()
 	root.SetVersionTemplate("rundiff {{.Version}}\n")
@@ -131,6 +137,10 @@ func runWrap(cmd *cobra.Command, args []string, f flags) error {
 	}
 	if f.churn < 0 || f.churn > 1 {
 		return &exitError{code: codeRundiff, msg: "--churn must be between 0 and 1"}
+	}
+	if f.tool != "" && f.tool != "none" && !slices.Contains(adapter.Tools(), f.tool) {
+		return &exitError{code: codeRundiff,
+			msg: "unknown --tool " + f.tool + " (known: " + strings.Join(adapter.Tools(), ", ") + ", none)"}
 	}
 
 	ctx := cmd.Context()
@@ -169,12 +179,19 @@ func runWrap(cmd *cobra.Command, args []string, f flags) error {
 		}
 	}
 
+	// The file-level adapter re-parses both runs' raw bytes and abstains (nil)
+	// whenever it is unsure — a nil claim renders as null fields, never as [].
+	var claim *delta.FileClaim
+	if c := extractClaim(args, prev, res, f.tool); c != nil {
+		claim = &delta.FileClaim{Tool: c.Tool, Failing: c.Failing, Fixed: c.Fixed, New: c.New}
+	}
+
 	// f.churn defaults to 0.5 (the flag default) and is passed by pointer so an
 	// explicit `--churn 0` reaches the core as 0 (degrade on any change) instead
 	// of colliding with the unset sentinel.
 	opt := delta.Options{JSON: f.json, Raw: f.raw, Full: f.full, ChurnLimit: &f.churn}
 	rep := delta.Diff(prev, delta.Run{Output: res.Output, Exit: res.Exit},
-		delta.Meta{AgeSeconds: ageSeconds, Key: key[:12]}, opt)
+		delta.Meta{AgeSeconds: ageSeconds, Key: key[:12], FileClaim: claim}, opt)
 	line, body := delta.Render(rep, opt)
 
 	out := cmd.OutOrStdout()
@@ -202,4 +219,15 @@ func runWrap(cmd *cobra.Command, args []string, f flags) error {
 		return &exitError{code: childExit} // silent: the JSON line already reported it
 	}
 	return nil
+}
+
+// extractClaim adapts the runner/cache values into adapter.Run and back —
+// delta and adapter are import-free leaves that mirror shapes, so the CLI is
+// where the values cross.
+func extractClaim(args []string, prev *delta.Run, res runner.Result, forceTool string) *adapter.Claim {
+	var prevA *adapter.Run
+	if prev != nil {
+		prevA = &adapter.Run{Output: prev.Output, Exit: prev.Exit}
+	}
+	return adapter.Extract(args, prevA, adapter.Run{Output: res.Output, Exit: res.Exit}, forceTool)
 }

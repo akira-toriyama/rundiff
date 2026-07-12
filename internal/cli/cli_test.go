@@ -263,3 +263,127 @@ func TestDefaultModeTextBody(t *testing.T) {
 		t.Errorf("default-mode body should show -/+ lines:\n%s", out)
 	}
 }
+
+// stubScript writes an executable that prints the given file's content and
+// exits with the given code — a deterministic stand-in for a wrapped tool.
+func stubScript(t *testing.T, output string, exit int) string {
+	t.Helper()
+	dir := t.TempDir()
+	data := filepath.Join(dir, "out.txt")
+	if err := os.WriteFile(data, []byte(output), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(dir, "tool.sh")
+	body := fmt.Sprintf("#!/bin/sh\ncat %q\nexit %d\n", data, exit)
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return script
+}
+
+// gotestOutput fabricates go-test-shaped output large enough to clear the
+// small-output degrade (the claim must be independent of the line diff's fate).
+func gotestOutput(fail bool) string {
+	var b strings.Builder
+	if fail {
+		b.WriteString("--- FAIL: TestMul (0.00s)\n    calc_test.go:13: Mul(2,3) = 6, want 7\n")
+	}
+	for i := 0; i < 60; i++ {
+		fmt.Fprintf(&b, "=== RUN   TestFiller%05d\n", i)
+	}
+	if fail {
+		b.WriteString("FAIL\nFAIL\texample.com/fix/calc\t0.20s\nok  \texample.com/fix/str\t0.10s\nFAIL\n")
+	} else {
+		b.WriteString("PASS\nok  \texample.com/fix/calc\t0.21s\nok  \texample.com/fix/str\t0.10s\n")
+	}
+	return b.String()
+}
+
+// The end-to-end claim path: a failing baseline carries tool+failing with a
+// null cross-run pair; the fixed re-run claims the package fixed. The argv must
+// hint go-test, so the stub is invoked through a "go test" wrapper name.
+func TestToolClaimEndToEnd(t *testing.T) {
+	setCache(t)
+	failing := stubScript(t, gotestOutput(true), 1)
+	passing := stubScript(t, gotestOutput(false), 0)
+
+	// argv[0] basename "go" + word "test" fires the hint; the script ignores
+	// its args.
+	goDir := t.TempDir()
+	goStub := filepath.Join(goDir, "go")
+	if err := os.WriteFile(goStub, []byte("#!/bin/sh\nexec \"$1\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	out1, code1 := runCLI(t, "--json", "--", goStub, failing, "test")
+	if code1 != 1 {
+		t.Fatalf("baseline exit = %d, want 1 (propagated)", code1)
+	}
+	for _, want := range []string{`"tool":"go-test"`, `"failing":["example.com/fix/calc"]`, `"fixed":null`, `"new":null`} {
+		if !strings.Contains(out1, want) {
+			t.Errorf("baseline line 1 missing %s: %s", want, out1)
+		}
+	}
+
+	// Same key (same argv) — swap the stub target by rewriting the wrapper.
+	if err := os.WriteFile(goStub, []byte(fmt.Sprintf("#!/bin/sh\nexec %q\n", passing)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out2, code2 := runCLI(t, "--json", "--", goStub, failing, "test")
+	if code2 != 0 {
+		t.Fatalf("re-run exit = %d, want 0", code2)
+	}
+	for _, want := range []string{`"tool":"go-test"`, `"failing":[]`, `"fixed":["example.com/fix/calc"]`, `"new":[]`} {
+		if !strings.Contains(out2, want) {
+			t.Errorf("re-run line 1 missing %s: %s", want, out2)
+		}
+	}
+}
+
+// --tool none disables the adapter: all four fields stay null.
+func TestToolNone(t *testing.T) {
+	setCache(t)
+	failing := stubScript(t, gotestOutput(true), 1)
+	goDir := t.TempDir()
+	goStub := filepath.Join(goDir, "go")
+	os.WriteFile(goStub, []byte("#!/bin/sh\nexec \"$1\"\n"), 0o755)
+	out, _ := runCLI(t, "--json", "--tool", "none", "--", goStub, failing, "test")
+	for _, want := range []string{`"tool":null`, `"failing":null`, `"fixed":null`, `"new":null`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("--tool none line 1 missing %s: %s", want, out)
+		}
+	}
+}
+
+// An unknown --tool is rundiff's own error: exit 125, no JSON line.
+func TestToolUnknown(t *testing.T) {
+	setCache(t)
+	out, code := runCLI(t, "--tool", "bogus", "--", "true")
+	if code != codeRundiff {
+		t.Fatalf("exit = %d, want %d", code, codeRundiff)
+	}
+	if out != "" {
+		t.Errorf("stdout = %q, want empty (errors go to stderr, no JSON line)", out)
+	}
+}
+
+// The claim channel is independent of the line diff: a forced degrade
+// (--churn 0) still carries fixed/new in line 1.
+func TestToolClaimSurvivesDegrade(t *testing.T) {
+	setCache(t)
+	failing := stubScript(t, gotestOutput(true), 1)
+	passing := stubScript(t, gotestOutput(false), 0)
+	goDir := t.TempDir()
+	goStub := filepath.Join(goDir, "go")
+	os.WriteFile(goStub, []byte("#!/bin/sh\nexec \"$1\"\n"), 0o755)
+
+	runCLI(t, "--json", "--churn", "0", "--", goStub, failing, "test")
+	os.WriteFile(goStub, []byte(fmt.Sprintf("#!/bin/sh\nexec %q\n", passing)), 0o755)
+	out, _ := runCLI(t, "--json", "--churn", "0", "--", goStub, failing, "test")
+	if !strings.Contains(out, `"degraded":true`) {
+		t.Fatalf("expected a degraded run: %s", out)
+	}
+	if !strings.Contains(out, `"fixed":["example.com/fix/calc"]`) {
+		t.Errorf("degraded line 1 lost the claim: %s", out)
+	}
+}
