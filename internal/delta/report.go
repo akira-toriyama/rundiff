@@ -130,13 +130,20 @@ func (r *Report) delta(dc diffCounts, opt Options) {
 	r.textBody = b.String()
 }
 
-// claimLine renders one file-level claim list, clipped like any displayed line.
+// claimLine renders one file-level claim list, clipped like any displayed
+// line. The clip only shortens the TEXT rendering — the JSON line always
+// carries the full arrays — and it is surfaced: a clipped claim line sets
+// Truncated, and clip's trailing marker shows the cut.
 func (r *Report) claimLine(label string, ids []string) string {
 	tool := ""
 	if r.Tool != nil {
 		tool = " (" + *r.Tool + ")"
 	}
-	return clip(label + tool + ": " + strings.Join(ids, ", "))
+	line := label + tool + ": " + strings.Join(ids, ", ")
+	if len(line) > maxDisplayLine {
+		r.Truncated = true
+	}
+	return clip(line)
 }
 
 const maxDisplayLine = 2048 // cap a single displayed line; matching uses the full line

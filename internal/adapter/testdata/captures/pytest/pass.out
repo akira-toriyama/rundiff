@@ -1,6 +1,6 @@
 ============================= test session starts ==============================
 platform darwin -- Python 3.13.13, pytest-9.1.1, pluggy-1.6.0
-rootdir: /private/tmp/claude-501/-Volumes-workspace-github-com-akira-toriyama-rundiff/98185392-74b5-4636-9c0f-5b0629bab28c/scratchpad/fixtures/py
+rootdir: /home/dev/fixture
 collected 4 items
 
 tests/test_math.py ...                                                   [ 75%]

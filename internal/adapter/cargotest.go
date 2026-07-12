@@ -22,8 +22,8 @@ import (
 var (
 	reCargoRunning = regexp.MustCompile(`^running \d+ tests?$`)
 	reCargoResult  = regexp.MustCompile(`^test result: (ok|FAILED)\. .*?(\d+) passed; (\d+) failed;`)
-	reCargoVerdict = regexp.MustCompile(`^test (.+?) \.\.\. (ok|FAILED|ignored)$`)
-	reCargoFailRef = regexp.MustCompile(`^    (\S.*)$`) // rows of a failures: block
+	reCargoVerdict = regexp.MustCompile(`^test (.+?) \.\.\. (ok|FAILED|ignored(?:, .*)?)$`) // rust ≥1.61: "ignored, <reason>"
+	reCargoFailRef = regexp.MustCompile(`^    (\S.*)$`)                                     // rows of a failures: block
 	reCargoDocLine = regexp.MustCompile(` \(line \d+\)$`)
 )
 
@@ -34,7 +34,7 @@ func init() { register(cargoTest{}) }
 func (cargoTest) name() string { return "cargo-test" }
 
 func (cargoTest) hint(argv []string) bool {
-	return hasBase(argv, "cargo") && hasWord(argv, "test")
+	return invokes(argv, "cargo") && hasWord(argv, "test")
 }
 
 func (cargoTest) match(lines []string) bool {
@@ -54,6 +54,24 @@ func (cargoTest) blockedFlags(argv []string) bool {
 	return hasFlag(argv, "--format", "--message-format", "-q", "--quiet") || hasFlagPrefix(argv, "-Z")
 }
 
+func (cargoTest) selectionFlags(argv []string) bool {
+	// Any positional token after `test` is a NAME filter (cargo test foo;
+	// cargo test -- --exact name) — identities are names, so a rename escapes
+	// the same filter. Flag values can false-positive here; over-withholding
+	// the pair is the safe direction.
+	seenTest := false
+	for _, a := range argv {
+		if !seenTest {
+			seenTest = a == "test"
+			continue
+		}
+		if a != "--" && !strings.HasPrefix(a, "-") {
+			return true
+		}
+	}
+	return false
+}
+
 func (cargoTest) silentWhenClean() bool { return false }
 
 func (cargoTest) parse(lines []string, exit int) (parseResult, bool) {
@@ -65,15 +83,23 @@ func (cargoTest) parse(lines []string, exit int) (parseResult, bool) {
 	sumFailed, sumPassed := 0, 0
 	sawResult := false
 	inFailures := false
+	seen := map[string]struct{}{} // verdicts per name, across all test binaries
 	for _, l := range lines {
 		if m := reCargoVerdict.FindStringSubmatch(l); m != nil {
 			name := reCargoDocLine.ReplaceAllString(m[1], "")
+			// The same unqualified name in two binaries (workspace crates both
+			// defining tests::x) would merge two different tests into one
+			// identity — a fail-swap between them would read as "no change".
+			if _, dup := seen[name]; dup {
+				return parseResult{}, false
+			}
+			seen[name] = struct{}{}
 			switch m[2] {
 			case "FAILED":
 				res.failing[name] = struct{}{}
 			case "ok":
 				res.passing[name] = struct{}{}
-			default:
+			default: // ignored / ignored, <reason>
 				res.notRun[name] = struct{}{}
 			}
 			inFailures = false
@@ -123,14 +149,4 @@ func sameKeys(a, b map[string]struct{}) bool {
 		}
 	}
 	return true
-}
-
-// hasFlagPrefix reports an argv token starting with the given prefix (-Z…).
-func hasFlagPrefix(argv []string, prefix string) bool {
-	for _, a := range argv {
-		if strings.HasPrefix(a, prefix) {
-			return true
-		}
-	}
-	return false
 }

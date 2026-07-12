@@ -25,15 +25,15 @@ import (
 // are safely ignored: failing membership comes from the summary, never from
 // progress chars.
 var (
-	rePyHeader   = regexp.MustCompile(`^=+ test session starts =+$`)
-	rePyFinal    = regexp.MustCompile(`^=+ (.+) in [0-9.]+s(?: \([^)]*\))? =+$`)
-	rePyFailed   = regexp.MustCompile(`^FAILED (\S+)`)
-	rePyError    = regexp.MustCompile(`^ERROR (\S+)`)
-	rePyPassedID = regexp.MustCompile(`^PASSED (\S+)`) // -rA / -rp summaries
-	rePyProgress = regexp.MustCompile(`^(\S+\.py)\s+([.sxXEF]+)\s*(?:\[\s*\d+%\])?$`)
-	rePyNFailed  = regexp.MustCompile(`(\d+) failed`)
-	rePyNError   = regexp.MustCompile(`(\d+) errors?`)
-	rePyNPassed  = regexp.MustCompile(`(\d+) passed`)
+	rePyHeader     = regexp.MustCompile(`^=+ test session starts =+$`)
+	rePyFinal      = regexp.MustCompile(`^=+ (.+) in [0-9.]+s(?: \([^)]*\))? =+$`)
+	rePyFailed     = regexp.MustCompile(`^FAILED (\S+)`)
+	rePyError      = regexp.MustCompile(`^ERROR (\S+)`)
+	rePyProgress   = regexp.MustCompile(`^(\S+\.py)\s+([.sxXEF]+)\s*(?:\[\s*\d+%\])?$`)
+	rePyNFailed    = regexp.MustCompile(`(\d+) failed`)
+	rePyNError     = regexp.MustCompile(`(\d+) errors?`)
+	rePyNPassed    = regexp.MustCompile(`(\d+) passed`)
+	rePyDeselected = regexp.MustCompile(`(\d+) deselected`)
 )
 
 type pytest struct{}
@@ -43,10 +43,7 @@ func init() { register(pytest{}) }
 func (pytest) name() string { return "pytest" }
 
 func (pytest) hint(argv []string) bool {
-	if hasBase(argv, "pytest", "py.test") {
-		return true
-	}
-	return hasBase(argv, "python", "python3") && hasWord(argv, "pytest")
+	return invokes(argv, "pytest", "py.test") // python -m pytest unwraps in commandBases
 }
 
 func (pytest) match(lines []string) bool {
@@ -75,6 +72,17 @@ func (pytest) blockedFlags(argv []string) bool {
 	return false
 }
 
+func (pytest) selectionFlags(argv []string) bool {
+	// -k/-m select by NAME/marker (a rename or a marker edit deselects a
+	// still-failing test under identical argv); --lf/--ff depend on pytest's
+	// own cache state, --deselect on nodeids. Directory/file args are
+	// path-level and stay allowed (identities are paths). -k and -m accept
+	// glued values (-k'expr').
+	return hasFlag(argv, "--lf", "--last-failed", "--ff", "--failed-first",
+		"--sw", "--stepwise", "--deselect") ||
+		hasFlagPrefix(argv, "-k") || hasFlagPrefix(argv, "-m")
+}
+
 func (pytest) silentWhenClean() bool { return false }
 
 func (pytest) parse(lines []string, exit int) (parseResult, bool) {
@@ -97,20 +105,20 @@ func (pytest) parse(lines []string, exit int) (parseResult, bool) {
 			errorLines++
 			continue
 		}
-		if m := rePyPassedID.FindStringSubmatch(l); m != nil {
-			res.passing[nodeFile(m[1])] = struct{}{}
-			continue
-		}
 		if m := rePyProgress.FindStringSubmatch(l); m != nil {
 			file, chars := m[1], m[2]
 			switch {
 			case strings.ContainsAny(chars, "EF"):
 				// Failing membership comes from the summary; the progress
 				// chars only ever ADD failure evidence, never pass evidence.
+			case strings.ContainsAny(chars, "sxX"):
+				// A skip/xfail ANYWHERE in the file means some test did not
+				// (really) run — possibly the previously-failing one, freshly
+				// @skip'd. Pass evidence requires an all-dots line; anything
+				// less is positively not-fully-run.
+				res.notRun[file] = struct{}{}
 			case strings.Contains(chars, "."):
 				res.passing[file] = struct{}{}
-			default:
-				res.notRun[file] = struct{}{} // all skipped/xfailed: not run
 			}
 			continue
 		}
@@ -123,6 +131,14 @@ func (pytest) parse(lines []string, exit int) (parseResult, bool) {
 	}
 	if barCount(rePyNFailed, finalBar) != failedLines || barCount(rePyNError, finalBar) != errorLines {
 		return parseResult{}, false // torn/truncated summary
+	}
+	// Deselection (a -k/-m/--deselect effect, possibly injected via
+	// PYTEST_ADDOPTS and so invisible in argv): the run's own bar says some
+	// collected tests were dropped by NAME, and nothing attributes them to
+	// files — every per-file pass line might be hiding a deselected failure.
+	// Drop all pass evidence.
+	if barCount(rePyDeselected, finalBar) > 0 {
+		res.passing = map[string]struct{}{}
 	}
 	res.cleanRun = exit == 0 && failedLines == 0 && errorLines == 0 && barCount(rePyNPassed, finalBar) > 0
 	return res, true

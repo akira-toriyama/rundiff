@@ -1,5 +1,5 @@
 
-/private/tmp/claude-501/-Volumes-workspace-github-com-akira-toriyama-rundiff/98185392-74b5-4636-9c0f-5b0629bab28c/scratchpad/fixtures/js/src/bad.js
+/home/dev/fixture/src/bad.js
   1:5   error    'unused' is assigned a value but never used        no-unused-vars
   1:5   warning  'unused' is never reassigned. Use 'const' instead  prefer-const
   2:5   warning  'never' is never reassigned. Use 'const' instead   prefer-const

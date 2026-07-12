@@ -34,7 +34,7 @@ func TestExtract_invariants(t *testing.T) {
 			prev := loadCapture(t, tool, prevSc[1])
 			cur := loadCapture(t, tool, curSc[1])
 			argv := argvFor(tool)
-			got := Extract(argv, &prev, cur, "")
+			got := Extract(argv, nil, &prev, cur, "")
 			if got == nil {
 				continue // abstention is always legal; specific pairs are pinned per tool
 			}
@@ -90,14 +90,14 @@ func TestExtract_invariants(t *testing.T) {
 			}
 
 			// Determinism: repeated call, byte-identical inputs ⇒ deep-equal.
-			again := Extract(argv, &prev, cur, "")
+			again := Extract(argv, nil, &prev, cur, "")
 			if !reflect.DeepEqual(got, again) {
 				t.Errorf("%s: non-deterministic: %+v vs %+v", name, got, again)
 			}
 
 			// Symmetry where both directions claim a pair.
 			if got.Fixed != nil {
-				rev := Extract(argv, &cur, prev, "")
+				rev := Extract(argv, nil, &cur, prev, "")
 				if rev != nil && rev.Fixed != nil {
 					if !reflect.DeepEqual(got.Fixed, rev.New) || !reflect.DeepEqual(got.New, rev.Fixed) {
 						t.Errorf("%s: asymmetric: fixed=%v new=%v vs rev fixed=%v new=%v",
@@ -133,14 +133,14 @@ func TestExtract_summarySevered(t *testing.T) {
 			continue
 		}
 		argv := argvFor(tool)
-		fullClaim := Extract(argv, nil, full, "")
+		fullClaim := Extract(argv, nil, nil, full, "")
 		if fullClaim == nil {
 			continue
 		}
 		lines := bytes.Split(full.Output, []byte("\n"))
 		for cut := 0; cut < len(lines); cut++ {
 			truncated := Run{Exit: full.Exit, Output: bytes.Join(lines[:cut], []byte("\n"))}
-			got := Extract(argv, &full, truncated, "")
+			got := Extract(argv, nil, &full, truncated, "")
 			if got == nil {
 				continue // abstained: always safe
 			}
@@ -168,11 +168,11 @@ func TestExtract_neverFalseFixed(t *testing.T) {
 			prev := loadCapture(t, tool, prevSc[1])
 			cur := loadCapture(t, tool, curSc[1])
 			argv := argvFor(tool)
-			base := Extract(argv, &prev, cur, "")
+			base := Extract(argv, nil, &prev, cur, "")
 			if base == nil || len(base.Failing) == 0 {
 				continue
 			}
-			prevClaim := Extract(argv, nil, prev, "")
+			prevClaim := Extract(argv, nil, nil, prev, "")
 			if prevClaim == nil {
 				continue
 			}
@@ -192,7 +192,7 @@ func TestExtract_neverFalseFixed(t *testing.T) {
 				mutated := make([][]byte, 0, len(lines)-1)
 				mutated = append(mutated, lines[:drop]...)
 				mutated = append(mutated, lines[drop+1:]...)
-				got := Extract(argv, &prev, Run{Exit: cur.Exit, Output: bytes.Join(mutated, []byte("\n"))}, "")
+				got := Extract(argv, nil, &prev, Run{Exit: cur.Exit, Output: bytes.Join(mutated, []byte("\n"))}, "")
 				if got == nil {
 					continue
 				}
@@ -230,7 +230,7 @@ func TestExtract_nullTable(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := Extract(c.argv, c.prev, c.cur, c.tool); got != nil {
+			if got := Extract(c.argv, nil, c.prev, c.cur, c.tool); got != nil {
 				t.Errorf("claim=%+v want nil", got)
 			}
 		})
@@ -244,7 +244,7 @@ func TestExtract_nullTable(t *testing.T) {
 			if name == "go-test" {
 				continue
 			}
-			if got := Extract(argvFor(name), nil, goFail, ""); got != nil {
+			if got := Extract(argvFor(name), nil, nil, goFail, ""); got != nil {
 				t.Errorf("argv for %s over go-test output: claim=%+v want nil", name, got)
 			}
 			return
@@ -263,7 +263,7 @@ func TestExtract_identityCap(t *testing.T) {
 		}
 		b.WriteString("\t0.1s\n")
 	}
-	if got := Extract([]string{"go", "test"}, nil, Run{Exit: 1, Output: []byte(b.String())}, ""); got != nil {
+	if got := Extract([]string{"go", "test"}, nil, nil, Run{Exit: 1, Output: []byte(b.String())}, ""); got != nil {
 		t.Errorf("claim with %d identities want nil", len(got.Failing))
 	}
 }
@@ -271,7 +271,7 @@ func TestExtract_identityCap(t *testing.T) {
 // A forced tool selects a parser but never bypasses the fingerprint gate.
 func TestExtract_forcedStillGated(t *testing.T) {
 	pytestish := Run{Exit: 1, Output: []byte("=== test session starts ===\nFAILED tests/x.py::t\n=== 1 failed in 0.1s ===\n")}
-	if got := Extract([]string{"pytest"}, nil, pytestish, "go-test"); got != nil {
+	if got := Extract([]string{"pytest"}, nil, nil, pytestish, "go-test"); got != nil {
 		t.Errorf("forcing go-test onto pytest output produced %+v, want nil", got)
 	}
 }

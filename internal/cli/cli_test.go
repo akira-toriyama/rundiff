@@ -288,7 +288,7 @@ func gotestOutput(fail bool) string {
 	if fail {
 		b.WriteString("--- FAIL: TestMul (0.00s)\n    calc_test.go:13: Mul(2,3) = 6, want 7\n")
 	}
-	for i := 0; i < 60; i++ {
+	for i := 0; i < 150; i++ {
 		fmt.Fprintf(&b, "=== RUN   TestFiller%05d\n", i)
 	}
 	if fail {

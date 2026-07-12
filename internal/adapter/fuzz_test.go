@@ -36,7 +36,7 @@ func FuzzExtract(f *testing.F) {
 		cur := Run{Output: curOut, Exit: curExit}
 
 		for _, p := range []*Run{prev, nil} {
-			got := Extract([]string{"go", "test"}, p, cur, forced)
+			got := Extract([]string{"go", "test"}, nil, p, cur, forced)
 			if got == nil {
 				continue
 			}

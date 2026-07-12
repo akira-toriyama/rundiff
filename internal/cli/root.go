@@ -223,11 +223,18 @@ func runWrap(cmd *cobra.Command, args []string, f flags) error {
 
 // extractClaim adapts the runner/cache values into adapter.Run and back —
 // delta and adapter are import-free leaves that mirror shapes, so the CLI is
-// where the values cross.
+// where the values cross. Selection-relevant environment variables are lifted
+// into tokens so env-injected flags (GOFLAGS=-run=…, PYTEST_ADDOPTS=-k …)
+// reach the adapter's blocked/selection gates: they change the tool's
+// behavior without changing argv or the cache key.
 func extractClaim(args []string, prev *delta.Run, res runner.Result, forceTool string) *adapter.Claim {
 	var prevA *adapter.Run
 	if prev != nil {
 		prevA = &adapter.Run{Output: prev.Output, Exit: prev.Exit}
 	}
-	return adapter.Extract(args, prevA, adapter.Run{Output: res.Output, Exit: res.Exit}, forceTool)
+	var envArgs []string
+	for _, v := range []string{"GOFLAGS", "PYTEST_ADDOPTS"} {
+		envArgs = append(envArgs, strings.Fields(os.Getenv(v))...)
+	}
+	return adapter.Extract(args, envArgs, prevA, adapter.Run{Output: res.Output, Exit: res.Exit}, forceTool)
 }

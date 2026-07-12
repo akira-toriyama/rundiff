@@ -29,7 +29,9 @@ What rundiff deliberately does **not** do, so the tool stays small and composabl
 
 - **Adapter parsers for more tools / more output eras.** v1 recognizes go test,
   pytest, jest, vitest, cargo test, tsc and eslint, with fixtures captured from
-  one era of each (see `internal/adapter/testdata/captures/*/VERSIONS`).
+  one era of each — except cargo, whose fixtures are transcribed from libtest's
+  stability-guaranteed format, not captured from a real run (see
+  `internal/adapter/testdata/captures/*/VERSIONS` for per-tool provenance).
   Format drift in a future tool version fails the fingerprint or the count
   reconciliation and the adapter abstains — never lies — but re-capturing new
   eras (and adding tools) is ongoing work.

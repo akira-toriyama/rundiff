@@ -35,7 +35,7 @@ func init() { register(goTest{}) }
 func (goTest) name() string { return "go-test" }
 
 func (goTest) hint(argv []string) bool {
-	return hasBase(argv, "go") && hasWord(argv, "test")
+	return invokes(argv, "go") && hasWord(argv, "test")
 }
 
 func (goTest) match(lines []string) bool {
@@ -49,8 +49,15 @@ func (goTest) match(lines []string) bool {
 
 func (goTest) blockedFlags(argv []string) bool {
 	// -json is a different format (and better data for whoever asked for it);
-	// -fuzz runs indefinitely and reports nothing trailer-shaped.
-	return hasFlag(argv, "-json", "-fuzz", "-bench")
+	// -fuzz runs indefinitely and reports nothing trailer-shaped. Go's flag
+	// package accepts one or two dashes — list both spellings.
+	return hasFlag(argv, "-json", "--json", "-fuzz", "--fuzz", "-bench", "--bench")
+}
+
+func (goTest) selectionFlags(argv []string) bool {
+	// -run/-skip select by test NAME: a rename silently deselects a
+	// still-failing test under identical argv.
+	return hasFlag(argv, "-run", "--run", "-skip", "--skip")
 }
 
 func (goTest) silentWhenClean() bool { return false }
@@ -60,14 +67,21 @@ func (goTest) parse(lines []string, exit int) (parseResult, bool) {
 		return parseResult{}, false // 2 = flag misuse / go's own error
 	}
 	res := parseResult{failing: map[string]struct{}{}, passing: map[string]struct{}{}, notRun: map[string]struct{}{}}
-	failMarks := 0
+	failMarks, skipMarks := 0, 0
 	for _, l := range lines {
 		if m := reGoFAIL.FindStringSubmatch(l); m != nil {
 			res.failing[m[1]] = struct{}{}
 			continue
 		}
 		if m := reGoOK.FindStringSubmatch(l); m != nil {
-			res.passing[m[1]] = struct{}{}
+			// `ok pkg 0.4s [no tests to run]` positively states ZERO tests
+			// executed (a -run/-skip pattern — possibly env-injected — matched
+			// nothing): the strongest not-run signal, never pass evidence.
+			if strings.Contains(l, "[no tests to run]") {
+				res.notRun[m[1]] = struct{}{}
+			} else {
+				res.passing[m[1]] = struct{}{}
+			}
 			continue
 		}
 		if m := reGoNoTest.FindStringSubmatch(l); m != nil {
@@ -77,6 +91,17 @@ func (goTest) parse(lines []string, exit int) (parseResult, bool) {
 		if strings.HasPrefix(l, "--- FAIL: ") {
 			failMarks++
 		}
+		if strings.HasPrefix(l, "--- SKIP: ") {
+			skipMarks++
+		}
+	}
+	// A -v run showing skips: some test in SOME package did not run, and go's
+	// trailer does not say which. Package-level pass evidence can no longer be
+	// trusted to cover a previously-failing test — drop it all (conservative;
+	// non-verbose runs print no skip marker at all, a documented residual of
+	// package-granularity identities).
+	if skipMarks > 0 {
+		res.passing = map[string]struct{}{}
 	}
 	// Structural reconciliation (go prints no count summary).
 	if exit != 0 && len(res.failing) == 0 {

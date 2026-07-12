@@ -102,22 +102,49 @@ vitest suite paths; tsc / eslint diagnostic paths), the package import path for
 |---|---|---|
 | A0 | kill switch | `--tool none` |
 | A1 | input guards | run > 8 MiB, > 50 000 lines, or a NUL byte |
-| A2 | selection | argv-hint-narrowed candidates; **exactly one** parser's fingerprint may match; both runs must resolve to the same parser (silent-clean exception: an empty exit-0 run is claimable by a `silentWhenClean` tool — tsc, eslint — adopted from the other run's parser plus an agreeing argv hint or `--tool`) |
-| A3 | blocked flags | an argv flag that changes the tool's format or exit semantics (`go test -json`, `jest --watch`, `eslint -f`, `tsc --incremental`, …) |
+| A2 | selection | argv-hint-narrowed candidates (hints look only at the command position plus one launcher level — a tool name in a script name or path argument never narrows); **exactly one** parser's fingerprint may match (silent-clean exception: an empty exit-0 run is claimable by a `silentWhenClean` tool — tsc, eslint — adopted from the other run's parser plus an agreeing argv hint or `--tool`) |
+| A3 | blocked flags | a flag — in argv or lifted from the environment (`GOFLAGS`, `PYTEST_ADDOPTS`) — that changes the tool's format or exit semantics (`go test -json`, `jest --watch`, `eslint -f`, `tsc --incremental`, …) |
 | A4 | parse + reconcile | the tool's sentinel ("run finished" line) missing, or the extracted failing count disagrees with the tool's own summary counts |
 | A5 | exit cross-check + cap | exit outside the tool's accepted set; `(exit==0) ⇎ (failing empty)`; signal exit; > 200 identities |
-| A6 | comparability | baseline, unparsed previous run, or a different tool ⇒ `fixed`/`new` null (`failing` survives) |
-| A7 | strict accounting | any previously-failing identity lacking positive evidence in the current run ⇒ `fixed`/`new` null together |
+| A6 | comparability (pair) | baseline, unparsed previous run, or a different tool ⇒ `fixed`/`new` null (`failing` survives) |
+| A7 | selection variance (pair) | a NAME-level selection flag (`go test -run`/`-skip`, pytest `-k`/`-m`/`--lf`, jest/vitest `-t`/`--onlyChanged`/`--changed`/`--shard`, a cargo name filter) in argv or the environment ⇒ `fixed`/`new` null — a rename or an unrelated edit silently deselects a still-failing test under identical argv, so a green run proves nothing |
+| A8 | strict accounting (pair) | any previously-failing identity lacking positive evidence in the current run ⇒ `fixed`/`new` null together |
 
-A7 is the load-bearing rule: **`fixed` is never inferred from absence.** Every
-previously-failing identity must still be failing, carry per-identity pass
-evidence (`ok pkg`, `PASS file`, `test x ... ok`, a clean pytest progress
-line), or be covered by a global clean-run proof (exit 0 plus the tool's own
-zero-failure output). An identity the tool positively reports as *not run*
-(go's `? pkg [no test files]`, cargo's `... ignored`, a fully-skipped pytest
-file) defeats both — skipping or deleting a failure is not fixing it. This
-structurally neutralizes bail/fail-fast, varying selection (`--lf`,
-`--onlyChanged`, shards), renames and truncation without flag archaeology.
+A8 is the load-bearing rule: **`fixed` is never inferred from absence.** For
+the chatty tools (go test, pytest, jest, vitest, cargo) evidence is strictly
+PER-IDENTITY — `ok pkg`, `PASS file`, an all-dots pytest progress line,
+`✓ file` with a skip-free count, `test x ... ok` — because their identity
+universe varies with selection, skips and config, so a green run does not
+vouch for an identity that printed no line. Only the `silentWhenClean` tools
+(tsc, eslint) get a global clean-run proof (exit 0 plus the tool's own
+zero-failure output): their clean run is inherently whole-project and
+markerless. An identity the tool positively reports as *not run* defeats any
+evidence — skipping or deleting a failure is not fixing it: go's
+`? pkg [no test files]` and `ok pkg [no tests to run]`, cargo's `... ignored`
+(with or without a reason), a pytest progress line containing any `s`/`x`, a
+vitest `↓` file or a `✓ … skipped` count. Tool-reported skip totals that
+cannot be attributed to an identity (jest's `N skipped/todo`, a go `--- SKIP:`
+mark, a pytest `N deselected` bar) drop ALL pass evidence for that run —
+conservative, never a lie.
+
+### Known limitations (documented residuals, all on the abstain-or-honest side except the first)
+
+- **go non-verbose skips are invisible.** `go test` (without `-v`) prints an
+  identical `ok pkg` whether every test ran or one was newly `t.Skip()`ed, so a
+  skip-silenced failure inside a package reads as that *package* passing.
+  Identities are package-granular for go; at that granularity the claim is
+  true — but be aware a skip can hide inside it. `-v` runs are protected (the
+  `--- SKIP:` mark drops pass evidence).
+- **Config-driven exclusion is invisible.** A tsconfig `exclude`, an
+  `.eslintignore` entry, jest `testPathIgnorePatterns`, pytest
+  `collect_ignore` added between runs removes a file from the universe without
+  an output trace. For the chatty tools the identity then simply loses its
+  evidence (pair withheld); for tsc/eslint the global clean-run proof can call
+  an excluded-but-still-broken file fixed. Exclusion edits change the config
+  file, not argv, so rundiff cannot see them.
+- **Env-driven selection is covered only for `GOFLAGS` and `PYTEST_ADDOPTS`**
+  (lifted into the flag gates by the CLI). Other channels a tool might read
+  selection from are not scanned.
 
 ### Claim invariants (enforced by tests + fuzz)
 
@@ -130,8 +157,10 @@ degraded line diff does not silence the adapter, which is exactly its payoff —
 line 1 still names what was fixed and what broke when the body is a bounded
 full view. The mechanized safety theorem (`TestExtract_neverFalseFixed`)
 deletes every single line of the current output in turn and asserts a
-still-failing identity is never claimed fixed; a new or changed parser must
-keep it green.
+still-failing identity is never claimed fixed; the skip/selection findings of
+the adversarial review are each pinned by a regression test in
+`internal/adapter/safety_test.go`. A new or changed parser must keep both
+green.
 
 ## Deferred (see docs/non-goals.md)
 

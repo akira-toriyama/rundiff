@@ -83,8 +83,12 @@ $ rundiff [flags] -- <command> [args...]
 しまうため、**不確かなら何も言わない** —— `null` であり、`[]`（自信を持って
 「なし」）とは異なる。主張が出るのは、ツール出力が完全に解析でき、ツール自身の
 カウントと照合が取れ、両 run が同一ツールで、かつ過去に失敗していた identity
-すべてが積極的証拠（pass 行、または証明可能なクリーン run）で説明できるとき
-だけ（失敗テストの skip や削除は fix と数えない）。
+すべてが identity ごとの積極的証拠（pass 行 —— 失敗テストの skip や削除は
+fix と数えない。クリーン run がプロジェクト全体の合格を意味する tsc/eslint
+だけは全体証明も可）で説明できるときだけ。テスト名レベルの選択
+（`go test -run`・pytest `-k`・jest/vitest `-t`/`--onlyChanged`・cargo の
+フィルタ）の下では `fixed`/`new` を保留する：rename は同一 argv のまま
+失敗中のテストを静かに選択から外せるため。
 
 ### JSON 契約
 
@@ -108,7 +112,7 @@ $ rundiff [flags] -- <command> [args...]
 | `truncated` | bool | ボディ/配列が予算で切られた |
 | `added_lines` / `removed_lines` | []string | `--json` かつ非 degrade かつ非 `--full`: 生の代表行 |
 | `body` | string | `--json` のベースライン/degrade/`--full`: bounded full 出力 |
-| `tool` | string \| null | 現 run の出力を完全に解析できた認識ツール。`null` = 無主張 |
+| `tool` | string \| null | run 対を完全に解析できた認識ツール（成功時に何も出力しない tsc/eslint のクリーン run は、他方 run の parser + argv hint 一致 or `--tool` で採用される）。`null` = 無主張 |
 | `failing` | []string \| null | 現 run の完全な失敗 identity 集合。`null` = 無主張（「失敗なし」では**ない**）、`[]` = 自信を持って「なし」 |
 | `fixed` / `new` | []string \| null | run 間の主張：失敗しなくなったと*証明された* identity ／ 以前は失敗が観測されていなかった現失敗 identity。`null` か非 null かは常に対 |
 

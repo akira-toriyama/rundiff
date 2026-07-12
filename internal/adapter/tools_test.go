@@ -74,7 +74,7 @@ func TestTools_capturePairs(t *testing.T) {
 		{
 			tool: "eslint", argv: []string{"eslint", "src/"}, prevSc: "fail", curSc: "pass",
 			wantFailing: []string{},
-			wantFixed:   []string{"/private/tmp/claude-501/-Volumes-workspace-github-com-akira-toriyama-rundiff/98185392-74b5-4636-9c0f-5b0629bab28c/scratchpad/fixtures/js/src/bad.js"},
+			wantFixed:   []string{"/home/dev/fixture/src/bad.js"},
 			wantNew:     []string{},
 		},
 	}
@@ -82,7 +82,7 @@ func TestTools_capturePairs(t *testing.T) {
 		t.Run(c.tool+":"+c.prevSc+"→"+c.curSc, func(t *testing.T) {
 			prev := loadCapture(t, c.tool, c.prevSc)
 			cur := loadCapture(t, c.tool, c.curSc)
-			got := Extract(c.argv, &prev, cur, "")
+			got := Extract(c.argv, nil, &prev, cur, "")
 			if got == nil {
 				t.Fatal("Extract returned nil, want a claim")
 			}
@@ -108,18 +108,18 @@ func TestTools_capturePairs(t *testing.T) {
 // Runs that are not a test verdict must refuse to parse.
 func TestTools_refusals(t *testing.T) {
 	collecterr := loadCapture(t, "pytest", "collecterr") // exit 2: interrupted collection
-	if got := Extract([]string{"pytest"}, nil, collecterr, ""); got != nil {
+	if got := Extract([]string{"pytest"}, nil, nil, collecterr, ""); got != nil {
 		t.Errorf("pytest collecterr (exit 2): claim=%+v want nil", got)
 	}
 
 	// A clean-empty run without an argv hint has no output evidence at all.
 	tscFail := loadCapture(t, "tsc", "fail")
-	if got := Extract([]string{"npm", "run", "typecheck"}, &tscFail, Run{Exit: 0}, ""); got != nil {
+	if got := Extract([]string{"npm", "run", "typecheck"}, nil, &tscFail, Run{Exit: 0}, ""); got != nil {
 		t.Errorf("hint-less silent-clean: claim=%+v want nil", got)
 	}
 
 	// Forcing bridges the missing hint — same runs, --tool tsc.
-	got := Extract([]string{"npm", "run", "typecheck"}, &tscFail, Run{Exit: 0}, "tsc")
+	got := Extract([]string{"npm", "run", "typecheck"}, nil, &tscFail, Run{Exit: 0}, "tsc")
 	if got == nil || !reflect.DeepEqual(got.Fixed, []string{"ts/a.ts", "ts/b.ts"}) {
 		t.Errorf("forced tsc over silent-clean: got %+v", got)
 	}
@@ -145,7 +145,7 @@ func TestTools_blockedFlags(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.tool+":"+c.argv[len(c.argv)-1], func(t *testing.T) {
 			fail := loadCapture(t, c.tool, "fail")
-			if got := Extract(c.argv, nil, fail, ""); got != nil {
+			if got := Extract(c.argv, nil, nil, fail, ""); got != nil {
 				t.Errorf("claim=%+v want nil (blocked flag)", got)
 			}
 		})
@@ -161,7 +161,7 @@ func TestESLint_warningsOnly(t *testing.T) {
 			"  1:5  warning  'x' is never reassigned. Use 'const' instead  prefer-const\n" +
 			"\n✖ 1 problem (0 errors, 1 warning)\n",
 	)}
-	got := Extract([]string{"eslint", "src/"}, &prev, warnOnly, "")
+	got := Extract([]string{"eslint", "src/"}, nil, &prev, warnOnly, "")
 	if got == nil {
 		t.Fatal("nil claim")
 	}
@@ -181,7 +181,7 @@ func TestCargo_failuresBlockCrossCheck(t *testing.T) {
 		"test tests::test_add ... ok\n" +
 		"\nfailures:\n    tests::test_other\n\n" +
 		"test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n"
-	if got := Extract([]string{"cargo", "test"}, nil, Run{Exit: 101, Output: []byte(out)}, ""); got != nil {
+	if got := Extract([]string{"cargo", "test"}, nil, nil, Run{Exit: 101, Output: []byte(out)}, ""); got != nil {
 		t.Errorf("claim=%+v want nil (failures block disagrees)", got)
 	}
 }
@@ -195,7 +195,7 @@ func TestCargo_ignoredIsNotRun(t *testing.T) {
 		"test tests::test_mul ... ignored\n" +
 		"test tests::test_zero ... ok\n" +
 		"\ntest result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s\n"
-	got := Extract([]string{"cargo", "test"}, &prev, Run{Exit: 0, Output: []byte(cur)}, "")
+	got := Extract([]string{"cargo", "test"}, nil, &prev, Run{Exit: 0, Output: []byte(cur)}, "")
 	if got == nil {
 		t.Fatal("nil claim")
 	}
@@ -213,7 +213,7 @@ func TestPytest_fullySkippedIsNotRun(t *testing.T) {
 		"tests/test_math.py sss                                                   [ 75%]\n" +
 		"tests/test_str.py .                                                      [100%]\n\n" +
 		"========================= 1 passed, 3 skipped in 0.01s ==========================\n"
-	got := Extract([]string{"pytest"}, &prev, Run{Exit: 0, Output: []byte(cur)}, "")
+	got := Extract([]string{"pytest"}, nil, &prev, Run{Exit: 0, Output: []byte(cur)}, "")
 	if got == nil {
 		t.Fatal("nil claim")
 	}
@@ -227,7 +227,7 @@ func TestExtract_compositeAmbiguity(t *testing.T) {
 	tscFail := loadCapture(t, "tsc", "fail")
 	esFail := loadCapture(t, "eslint", "fail")
 	combined := append(append([]byte{}, tscFail.Output...), esFail.Output...)
-	if got := Extract([]string{"npm", "run", "check"}, nil, Run{Exit: 1, Output: combined}, ""); got != nil {
+	if got := Extract([]string{"npm", "run", "check"}, nil, nil, Run{Exit: 1, Output: combined}, ""); got != nil {
 		t.Errorf("claim=%+v want nil (two fingerprints in one output)", got)
 	}
 }

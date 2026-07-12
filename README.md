@@ -92,8 +92,12 @@ make an agent stop looking, so **when unsure the adapter says nothing** —
 `null`, which is different from `[]` ("confidently nothing"). A claim is only
 made when the tool's output parses completely, its own counts reconcile, both
 runs come from the same tool, and every previously-failing identity is
-accounted for by positive evidence (a pass line, or a provably clean run —
-where skipping/deleting a failing test does *not* count as fixing it).
+accounted for by positive per-identity evidence (a pass line — skipping or
+deleting a failing test does *not* count as fixing it; only tsc/eslint, whose
+clean run is a whole-project pass, may prove it globally). Under name-level
+test selection (`go test -run`, pytest `-k`, jest/vitest `-t`/`--onlyChanged`,
+a cargo filter) `fixed`/`new` are withheld: a rename can silently deselect a
+still-failing test between runs with identical argv.
 
 ### The JSON contract
 
@@ -117,7 +121,7 @@ no trustworthy line diff was computed (baseline, or a degrade that nulls counts)
 | `truncated` | bool | body/arrays clipped by a budget |
 | `added_lines` / `removed_lines` | []string | `--json`, non-degraded, **not** `--full`: raw representative lines |
 | `body` | string | `--json` on baseline / degrade / `--full`: the bounded full output |
-| `tool` | string \| null | recognized tool whose current-run output parsed completely; `null` = no claim |
+| `tool` | string \| null | recognized tool whose run pair parsed completely (a silent clean run — tsc/eslint print nothing on success — is adopted from the other run's parser plus an agreeing argv hint or `--tool`); `null` = no claim |
 | `failing` | []string \| null | the current run's complete failing identities; `null` = no claim (**not** "nothing failing"), `[]` = confidently none |
 | `fixed` / `new` | []string \| null | cross-run claim: previously-failing identities *proven* not failing now / currently-failing identities not observed failing before; `null` or non-null together |
 

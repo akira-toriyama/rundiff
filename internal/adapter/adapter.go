@@ -66,7 +66,11 @@ type Claim struct {
 type parser interface {
 	name() string
 	// hint reports whether argv plausibly invokes this tool (a candidate
-	// filter, never proof — the output decides).
+	// filter, never proof — the output decides). Hints look only at the
+	// command position and one launcher level (npx/pnpm/…): a tool name in an
+	// arbitrary token (an npm script named "tsc", a path argument) must NOT
+	// fire, or it would narrow the candidate set away from a composite
+	// ambiguity the exactly-one rule exists to refuse.
 	hint(argv []string) bool
 	// match reports whether the cleaned lines self-identify as this tool's
 	// output, anchored on its most fossilized sentinels.
@@ -74,8 +78,18 @@ type parser interface {
 	// blockedFlags reports an argv flag that changes this tool's output format
 	// or exit semantics into something the parser does not cover.
 	blockedFlags(argv []string) bool
+	// selectionFlags reports a NAME-level test-selection flag (-run, -k, -t,
+	// --onlyChanged, a cargo name filter, …). Under such a flag the identity
+	// universe depends on test NAMES or git state, so a rename or an unrelated
+	// edit silently deselects a still-failing test between runs with identical
+	// argv — pass evidence then proves nothing, and the cross-run pair is
+	// withheld. Path-level selection (jest path regexes, pytest dirs) stays
+	// allowed: identities ARE paths, so a moved path simply loses its evidence
+	// and A7 nils the pair on its own.
+	selectionFlags(argv []string) bool
 	// silentWhenClean marks tools whose clean run legitimately prints nothing
-	// (tsc, eslint) — eligible for silent-clean adoption in Extract.
+	// (tsc, eslint) — eligible for silent-clean adoption in Extract and the
+	// only tools whose cleanRun feeds the global pass proof.
 	silentWhenClean() bool
 	// parse extracts the failure/pass evidence from one run. ok=false ⇒ this
 	// run makes no claim at all.
@@ -124,13 +138,18 @@ type resolution struct {
 
 // Extract parses both runs and returns a Claim, or nil when the current run
 // cannot be confidently parsed. prev == nil ⇒ baseline (Fixed/New stay nil).
-// forceTool: "" = auto-detect, "none" = disabled, else a Tools() name —
-// forcing selects a parser, it never bypasses a gate (unknown names are the
-// CLI's to reject; here they simply select nothing).
-func Extract(argv []string, prev *Run, cur Run, forceTool string) *Claim {
+// envArgs carries selection-relevant tokens the CLI lifted from the
+// environment (GOFLAGS, PYTEST_ADDOPTS, … — tokenized): env-injected flags
+// change tool behavior without changing argv (or the cache key), so the
+// blocked/selection gates must see them too. forceTool: "" = auto-detect,
+// "none" = disabled, else a Tools() name — forcing selects a parser, it never
+// bypasses a gate (unknown names are the CLI's to reject; here they simply
+// select nothing).
+func Extract(argv []string, envArgs []string, prev *Run, cur Run, forceTool string) *Claim {
 	if forceTool == "none" {
 		return nil
 	}
+	flagView := append(append([]string{}, argv...), envArgs...)
 	var forced parser
 	if forceTool != "" {
 		for _, p := range parsers {
@@ -143,10 +162,10 @@ func Extract(argv []string, prev *Run, cur Run, forceTool string) *Claim {
 		}
 	}
 
-	curR := resolveRun(argv, cur, forced)
+	curR := resolveRun(argv, flagView, cur, forced)
 	var prevR resolution
 	if prev != nil {
-		prevR = resolveRun(argv, *prev, forced)
+		prevR = resolveRun(argv, flagView, *prev, forced)
 	}
 
 	// Silent-clean adoption: a run with exit 0 and blank output is claimable by
@@ -190,13 +209,27 @@ func Extract(argv []string, prev *Run, cur Run, forceTool string) *Claim {
 		return claim
 	}
 
-	// A7 strict accounting: every previously-failing identity must either still
-	// be failing, or carry positive pass evidence — per-identity, or the global
-	// clean-run proof (exit 0 + the tool's own zero-failure output). An
-	// identity the tool reported as not-run (deletion / skip) is unaccounted no
-	// matter what: not running a failure is not fixing it. One unaccounted
-	// identity withholds the whole pair.
-	globalPass := cur.Exit == 0 && curR.res.cleanRun
+	// Name-level selection (-run, -k, -t, --onlyChanged, a cargo filter, in
+	// argv or the environment): the identity universe then depends on test
+	// names or git state, so a rename or an unrelated edit silently deselects
+	// a still-failing test between runs with identical argv — a green subset
+	// run would read as a fix. Pass evidence proves nothing here; withhold the
+	// pair (failing, from lines actually printed, stays sound).
+	if curR.p.selectionFlags(flagView) {
+		return claim
+	}
+
+	// A7 strict accounting: every previously-failing identity must either
+	// still be failing, or carry positive pass evidence. For chatty tools that
+	// is PER-IDENTITY only (ok pkg, PASS file, an all-dots progress line, test
+	// x ... ok): their identity universe varies with selection, skips and
+	// config, so a green run does not vouch for an identity that printed no
+	// line. Only silentWhenClean tools (tsc, eslint) get the global clean-run
+	// proof — their clean run is inherently whole-project and markerless. An
+	// identity the tool reported as not-run (skip / no tests to run) is
+	// unaccounted no matter what: not running a failure is not fixing it. One
+	// unaccounted identity withholds the whole pair.
+	globalPass := cur.Exit == 0 && curR.res.cleanRun && curR.p.silentWhenClean()
 	for id := range prevR.res.failing {
 		if _, skipped := curR.res.notRun[id]; skipped {
 			return claim
@@ -219,9 +252,10 @@ func Extract(argv []string, prev *Run, cur Run, forceTool string) *Claim {
 }
 
 // resolveRun runs the per-run gate pipeline: input guards (A1), candidate
-// selection + exactly-one match (A2), blocked flags (A3), parse + reconcile
-// (A4, inside the parser), and the generic exit/size cross-checks (A5).
-func resolveRun(argv []string, r Run, forced parser) resolution {
+// selection + exactly-one match (A2), blocked flags (A3, over argv plus the
+// env-lifted tokens), parse + reconcile (A4, inside the parser), and the
+// generic exit/size cross-checks (A5).
+func resolveRun(argv, flagView []string, r Run, forced parser) resolution {
 	if len(r.Output) > maxInputBytes || bytes.IndexByte(r.Output, 0) >= 0 {
 		return resolution{}
 	}
@@ -252,7 +286,7 @@ func resolveRun(argv []string, r Run, forced parser) resolution {
 		}
 		matched = p
 	}
-	if matched == nil || matched.blockedFlags(argv) {
+	if matched == nil || matched.blockedFlags(flagView) {
 		return resolution{}
 	}
 

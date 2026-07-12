@@ -26,7 +26,7 @@ func init() { register(tsc{}) }
 
 func (tsc) name() string { return "tsc" }
 
-func (tsc) hint(argv []string) bool { return hasBase(argv, "tsc", "vue-tsc") }
+func (tsc) hint(argv []string) bool { return invokes(argv, "tsc", "vue-tsc") }
 
 func (tsc) match(lines []string) bool {
 	for _, l := range lines {
@@ -42,6 +42,8 @@ func (tsc) blockedFlags(argv []string) bool {
 	// diagnostics across runs — uncertainty ⇒ silence.
 	return hasFlag(argv, "--watch", "-w", "-b", "--build", "--incremental")
 }
+
+func (tsc) selectionFlags([]string) bool { return false } // tsc has no name-level selection
 
 func (tsc) silentWhenClean() bool { return true }
 

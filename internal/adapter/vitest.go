@@ -19,12 +19,16 @@ import (
 //
 // Reconciliation: distinct failing files must equal the Test Files line's
 // `N failed` (missing segment = 0).
+// Workspace/projects mode prefixes each file with a plain `|project|` tag —
+// the tag is part of the honest identity (the same file can run under two
+// projects), so the captures include it when present.
 var (
 	reVtFiles    = regexp.MustCompile(`^\s*Test Files\s\s+(.+)$`)
 	reVtTests    = regexp.MustCompile(`^\s*Tests\s\s+.*\(\d+\)`)
-	reVtFailHdr  = regexp.MustCompile(`^\s*FAIL\s+(\S+)`)
-	reVtFailList = regexp.MustCompile(`^\s*❯\s+(\S+)\s+\(.*failed`)
-	reVtPassList = regexp.MustCompile(`^\s*✓\s+(\S+)\s+\(`)
+	reVtFailHdr  = regexp.MustCompile(`^\s*FAIL\s+((?:\|[^|]+\|\s+)?\S+)`)
+	reVtFailList = regexp.MustCompile(`^\s*❯\s+((?:\|[^|]+\|\s+)?\S+)\s+\(.*failed`)
+	reVtPassList = regexp.MustCompile(`^\s*✓\s+((?:\|[^|]+\|\s+)?\S+)\s+\(([^)]*)\)`)
+	reVtSkipList = regexp.MustCompile(`^\s*↓\s+((?:\|[^|]+\|\s+)?\S+)`)
 	reVtNFailed  = regexp.MustCompile(`(\d+) failed`)
 	reVtNPassed  = regexp.MustCompile(`(\d+) passed`)
 )
@@ -35,7 +39,7 @@ func init() { register(vitest{}) }
 
 func (vitest) name() string { return "vitest" }
 
-func (vitest) hint(argv []string) bool { return hasBase(argv, "vitest") }
+func (vitest) hint(argv []string) bool { return invokes(argv, "vitest") }
 
 func (vitest) match(lines []string) bool {
 	files, tests := false, false
@@ -54,13 +58,19 @@ func (vitest) blockedFlags(argv []string) bool {
 	return hasFlag(argv, "--reporter", "--watch", "--ui")
 }
 
+func (vitest) selectionFlags(argv []string) bool {
+	// Name- and git-state-level selection (see jest): a green subset run
+	// proves nothing about a deselected file.
+	return hasFlag(argv, "-t", "--testNamePattern", "--changed", "--shard")
+}
+
 func (vitest) silentWhenClean() bool { return false }
 
 func (vitest) parse(lines []string, exit int) (parseResult, bool) {
 	if exit != 0 && exit != 1 {
 		return parseResult{}, false
 	}
-	res := parseResult{failing: map[string]struct{}{}, passing: map[string]struct{}{}}
+	res := parseResult{failing: map[string]struct{}{}, passing: map[string]struct{}{}, notRun: map[string]struct{}{}}
 	var filesLine string
 	for _, l := range lines {
 		if strings.Contains(l, "Unhandled Error") {
@@ -75,7 +85,18 @@ func (vitest) parse(lines []string, exit int) (parseResult, bool) {
 			continue
 		}
 		if m := reVtPassList.FindStringSubmatch(l); m != nil {
-			res.passing[m[1]] = struct{}{}
+			// `✓ file (2 tests | 1 skipped)` means some test in the file did
+			// not run — possibly the previously-failing one, freshly skipped.
+			// Pass evidence requires a skip-free paren.
+			if strings.Contains(m[2], "skipped") || strings.Contains(m[2], "todo") {
+				res.notRun[m[1]] = struct{}{}
+			} else {
+				res.passing[m[1]] = struct{}{}
+			}
+			continue
+		}
+		if m := reVtSkipList.FindStringSubmatch(l); m != nil {
+			res.notRun[m[1]] = struct{}{} // ↓ = fully-skipped file
 			continue
 		}
 		if m := reVtFiles.FindStringSubmatch(l); m != nil {

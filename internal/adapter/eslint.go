@@ -30,7 +30,7 @@ func init() { register(eslint{}) }
 
 func (eslint) name() string { return "eslint" }
 
-func (eslint) hint(argv []string) bool { return hasBase(argv, "eslint") }
+func (eslint) hint(argv []string) bool { return invokes(argv, "eslint") }
 
 func (eslint) match(lines []string) bool {
 	row, problem := false, false
@@ -50,6 +50,8 @@ func (eslint) blockedFlags(argv []string) bool {
 	// warnings drive exit 1, breaking the exit ⇔ failing-set equivalence.
 	return hasFlag(argv, "-f", "--format", "--max-warnings")
 }
+
+func (eslint) selectionFlags([]string) bool { return false } // eslint has no name-level selection
 
 func (eslint) silentWhenClean() bool { return true }
 

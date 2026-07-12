@@ -47,7 +47,7 @@ func TestGoTest_capturePairs(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := Extract(goArgv, c.prev, c.cur, "")
+			got := Extract(goArgv, nil, c.prev, c.cur, "")
 			if got == nil {
 				t.Fatal("Extract returned nil, want a claim")
 			}
@@ -75,7 +75,7 @@ func TestGoTest_capturePairs(t *testing.T) {
 func TestGoTest_verbose(t *testing.T) {
 	vfail := loadCapture(t, "go-test", "verbose-fail")
 	vpass := loadCapture(t, "go-test", "verbose-pass")
-	got := Extract([]string{"go", "test", "-v", "./calc/"}, &vfail, vpass, "")
+	got := Extract([]string{"go", "test", "-v", "./calc/"}, nil, &vfail, vpass, "")
 	if got == nil {
 		t.Fatal("nil claim")
 	}
@@ -110,7 +110,7 @@ func TestGoTest_parseGates(t *testing.T) {
 func TestGoTest_noTestFilesIsNotPassEvidence(t *testing.T) {
 	prev := Run{Exit: 1, Output: []byte("FAIL\texample.com/fixture/calc\t0.2s\nFAIL\n")}
 	cur := Run{Exit: 0, Output: []byte("?   \texample.com/fixture/calc\t[no test files]\nok  \texample.com/fixture/str\t0.1s\n")}
-	got := Extract(goArgv, &prev, cur, "")
+	got := Extract(goArgv, nil, &prev, cur, "")
 	if got == nil {
 		t.Fatal("nil claim, want failing-only claim")
 	}
@@ -128,7 +128,7 @@ func TestGoTest_noTestFilesIsNotPassEvidence(t *testing.T) {
 func TestGoTest_cleanRunNeedsOKTrailer(t *testing.T) {
 	prev := Run{Exit: 1, Output: []byte("FAIL\texample.com/fixture/calc\t0.2s\nFAIL\n")}
 	cur := Run{Exit: 0, Output: []byte("--- PASS: TestOther (0.00s)\nPASS\n")}
-	got := Extract(goArgv, &prev, cur, "")
+	got := Extract(goArgv, nil, &prev, cur, "")
 	if got == nil {
 		t.Fatal("nil claim")
 	}
@@ -144,7 +144,7 @@ func TestGoTest_blockedFlags(t *testing.T) {
 		{"go", "test", "-json", "./..."},
 		{"go", "test", "-fuzz", "FuzzX", "./..."},
 	} {
-		if got := Extract(argv, &fail, pass, ""); got != nil {
+		if got := Extract(argv, nil, &fail, pass, ""); got != nil {
 			t.Errorf("argv=%v: claim=%+v want nil (blocked flag)", argv, got)
 		}
 	}
