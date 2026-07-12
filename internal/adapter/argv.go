@@ -5,58 +5,90 @@ import (
 	"strings"
 )
 
-// argv helpers shared by the per-tool hint/blockedFlags implementations.
+// argv analysis shared by the per-tool hint/blockedFlags/selectionFlags impls.
 //
-// Hints must look only at tokens that can actually BE the tool: the command
-// position, plus one unambiguous launcher level. Scanning every token is not
-// safe — an npm SCRIPT named "tsc" (argv: npm run tsc) or a path argument
-// containing a tool name would narrow the candidate set away from a composite
-// ambiguity the exactly-one rule exists to refuse. Under-firing is fine: with
-// no hint every parser is a candidate and the output fingerprint decides.
-
-// commandBases returns the basenames of the command-position tokens: argv[0],
-// plus the launched tool for npx/pnpx/bunx, `npm|pnpm|yarn|bun exec|dlx`, and
-// `python -m <tool>`. Bare `pnpm <name>` / `yarn <name>` are NOT unwrapped —
-// <name> may be a script whose name collides with a tool.
-func commandBases(argv []string) []string {
+// resolveTool identifies the wrapped tool from argv's COMMAND POSITION,
+// unwrapping exactly one launcher level, and returns two things:
+//
+//   - bases: the basenames a hint may match (argv[0] plus, if a launcher was
+//     unwrapped, the launched tool). A tool name appearing in a launcher FLAG
+//     VALUE (npx -p tsc …), a script name (npm run tsc), or a script argument
+//     (python runner.py -m pytest) is NOT the command position and never
+//     becomes a base — otherwise it would narrow the candidate set away from a
+//     composite the exactly-one rule must refuse.
+//   - toolArgs: the tool's OWN argument tokens (everything after the tool
+//     token). The launcher's flags are excluded, so a gate scanning toolArgs
+//     never mistakes `python -m`'s -m for pytest's marker flag.
+func resolveTool(argv []string) (bases, toolArgs []string) {
 	if len(argv) == 0 {
-		return nil
+		return nil, nil
 	}
-	bases := []string{path.Base(argv[0])}
+	cmd := path.Base(argv[0])
+	bases = []string{cmd}
 	rest := argv[1:]
-	switch bases[0] {
+	switch cmd {
 	case "npx", "pnpx", "bunx":
-		// the next non-flag token is the tool
+		return unwrapExec(bases, rest)
 	case "npm", "pnpm", "yarn", "bun":
-		if len(rest) == 0 || (rest[0] != "exec" && rest[0] != "dlx") {
-			return bases
+		if len(rest) > 0 && (rest[0] == "exec" || rest[0] == "dlx") {
+			return unwrapExec(bases, rest[1:])
 		}
-		rest = rest[1:]
+		return bases, rest // bare `npm test` — npm is the script runner; no unwrap
 	case "python", "python3":
-		for i, a := range rest {
-			if a == "-m" && i+1 < len(rest) {
-				bases = append(bases, rest[i+1])
-				break
-			}
-		}
-		return bases
+		return unwrapPython(bases, rest)
 	default:
-		return bases
+		return bases, rest
 	}
-	for _, a := range rest {
+}
+
+// execValueFlags are the launcher flags (npx / pnpm exec / …) that consume a
+// following token as their value — that value is NOT the launched tool.
+var execValueFlags = map[string]bool{
+	"-p": true, "--package": true, "-c": true, "--call": true,
+	"-w": true, "--workspace": true,
+}
+
+func unwrapExec(bases, rest []string) ([]string, []string) {
+	for i := 0; i < len(rest); i++ {
+		a := rest[i]
 		if strings.HasPrefix(a, "-") {
+			if execValueFlags[a] {
+				i++ // skip the flag's value (glued -p=… stays here, harmless)
+			}
 			continue
 		}
 		bases = append(bases, path.Base(a))
-		break
+		return bases, rest[i+1:]
 	}
-	return bases
+	return bases, nil
+}
+
+func unwrapPython(bases, rest []string) ([]string, []string) {
+	for i := 0; i < len(rest); i++ {
+		a := rest[i]
+		if a == "-m" && i+1 < len(rest) {
+			bases = append(bases, path.Base(rest[i+1]))
+			return bases, rest[i+2:]
+		}
+		if a == "-c" {
+			return bases, nil // python -c '<code>': not a tool we recognize
+		}
+		if strings.HasPrefix(a, "-") {
+			continue // interpreter flag (-B, -O, …)
+		}
+		// A non-flag before -m is a script path (python runner.py …): the
+		// script is the command, its own -m/args are not the interpreter's.
+		bases = append(bases, path.Base(a))
+		return bases, rest[i+1:]
+	}
+	return bases, nil
 }
 
 // invokes reports whether argv's command position (launcher-unwrapped) names
 // one of the given tools.
 func invokes(argv []string, names ...string) bool {
-	for _, b := range commandBases(argv) {
+	bases, _ := resolveTool(argv)
+	for _, b := range bases {
 		for _, n := range names {
 			if b == n {
 				return true
@@ -66,8 +98,8 @@ func invokes(argv []string, names ...string) bool {
 	return false
 }
 
-// hasWord reports whether any argv token equals one of names verbatim
-// (subcommands like "test" — no basename games).
+// hasWord reports whether any token equals one of names verbatim (subcommands
+// like "test" — no basename games).
 func hasWord(argv []string, names ...string) bool {
 	for _, a := range argv {
 		for _, n := range names {
@@ -80,10 +112,9 @@ func hasWord(argv []string, names ...string) bool {
 }
 
 // hasFlag reports whether any token is one of flags, either exactly or in its
-// flag=value form. Callers list both the -flag and --flag spellings where the
-// tool accepts both (Go's flag package does). Over-matching a token that
-// merely looks like a blocked flag is conservative (silence), never a false
-// claim.
+// flag=value form. Callers list every spelling the tool accepts (Go's flag
+// package takes one OR two dashes, and every `go test` flag also has a
+// `-test.`-prefixed form). Over-matching is conservative (silence), never a lie.
 func hasFlag(argv []string, flags ...string) bool {
 	for _, a := range argv {
 		for _, f := range flags {
@@ -95,7 +126,7 @@ func hasFlag(argv []string, flags ...string) bool {
 	return false
 }
 
-// hasFlagPrefix reports an argv token starting with the given prefix (-Z…, -k…).
+// hasFlagPrefix reports a token starting with the given prefix (-Z…).
 func hasFlagPrefix(argv []string, prefix string) bool {
 	for _, a := range argv {
 		if strings.HasPrefix(a, prefix) {

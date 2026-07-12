@@ -56,8 +56,11 @@ func (goTest) blockedFlags(argv []string) bool {
 
 func (goTest) selectionFlags(argv []string) bool {
 	// -run/-skip select by test NAME: a rename silently deselects a
-	// still-failing test under identical argv.
-	return hasFlag(argv, "-run", "--run", "-skip", "--skip")
+	// still-failing test under identical argv. `go test` also accepts every
+	// test flag under a `-test.` prefix (go help testflag) and with one or two
+	// dashes, so list all spellings.
+	return hasFlag(argv, "-run", "--run", "-skip", "--skip",
+		"-test.run", "--test.run", "-test.skip", "--test.skip")
 }
 
 func (goTest) silentWhenClean() bool { return false }
@@ -88,10 +91,14 @@ func (goTest) parse(lines []string, exit int) (parseResult, bool) {
 			res.notRun[m[1]] = struct{}{}
 			continue
 		}
-		if strings.HasPrefix(l, "--- FAIL: ") {
+		// Subtest marks are indented (`    --- SKIP:`), so match after trimming
+		// leading whitespace — otherwise a skipped SUBTEST slips past the wipe
+		// and its parent's top-level `--- PASS`/`ok` reads as pass evidence.
+		trimmed := strings.TrimLeft(l, " \t")
+		if strings.HasPrefix(trimmed, "--- FAIL: ") {
 			failMarks++
 		}
-		if strings.HasPrefix(l, "--- SKIP: ") {
+		if strings.HasPrefix(trimmed, "--- SKIP: ") {
 			skipMarks++
 		}
 	}

@@ -31,7 +31,19 @@ var (
 	reVtSkipList = regexp.MustCompile(`^\s*↓\s+((?:\|[^|]+\|\s+)?\S+)`)
 	reVtNFailed  = regexp.MustCompile(`(\d+) failed`)
 	reVtNPassed  = regexp.MustCompile(`(\d+) passed`)
+	// A vitest file identity is a path: it carries a separator or a source
+	// extension. A per-test name (`✓ parses`, even `✓ handles (edge) case`)
+	// does not — the guard keeps such lines from minting file pass evidence.
+	reVtFileish = regexp.MustCompile(`/|\.[cm]?[jt]sx?$`)
 )
+
+func looksLikeVitestFile(id string) bool {
+	// Strip a leading |project| tag before the path test.
+	if i := strings.LastIndex(id, "| "); i >= 0 {
+		id = id[i+2:]
+	}
+	return reVtFileish.MatchString(id)
+}
 
 type vitest struct{}
 
@@ -84,10 +96,12 @@ func (vitest) parse(lines []string, exit int) (parseResult, bool) {
 			res.failing[m[1]] = struct{}{}
 			continue
 		}
-		if m := reVtPassList.FindStringSubmatch(l); m != nil {
+		if m := reVtPassList.FindStringSubmatch(l); m != nil && looksLikeVitestFile(m[1]) {
 			// `✓ file (2 tests | 1 skipped)` means some test in the file did
 			// not run — possibly the previously-failing one, freshly skipped.
-			// Pass evidence requires a skip-free paren.
+			// Pass evidence requires a skip-free paren. The file-shape guard
+			// keeps an indented per-TEST `✓ name (…)` line (a test.each case)
+			// from minting file-level pass evidence.
 			if strings.Contains(m[2], "skipped") || strings.Contains(m[2], "todo") {
 				res.notRun[m[1]] = struct{}{}
 			} else {
@@ -95,7 +109,7 @@ func (vitest) parse(lines []string, exit int) (parseResult, bool) {
 			}
 			continue
 		}
-		if m := reVtSkipList.FindStringSubmatch(l); m != nil {
+		if m := reVtSkipList.FindStringSubmatch(l); m != nil && looksLikeVitestFile(m[1]) {
 			res.notRun[m[1]] = struct{}{} // ↓ = fully-skipped file
 			continue
 		}

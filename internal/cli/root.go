@@ -232,9 +232,12 @@ func extractClaim(args []string, prev *delta.Run, res runner.Result, forceTool s
 	if prev != nil {
 		prevA = &adapter.Run{Output: prev.Output, Exit: prev.Exit}
 	}
-	var envArgs []string
-	for _, v := range []string{"GOFLAGS", "PYTEST_ADDOPTS"} {
-		envArgs = append(envArgs, strings.Fields(os.Getenv(v))...)
+	// Pass the selection-relevant env vars raw; the adapter applies each only
+	// to the tool that owns it (GOFLAGS→go, PYTEST_ADDOPTS→pytest), so a Go env
+	// var never withholds a pytest claim.
+	env := map[string]string{
+		"GOFLAGS":        os.Getenv("GOFLAGS"),
+		"PYTEST_ADDOPTS": os.Getenv("PYTEST_ADDOPTS"),
 	}
-	return adapter.Extract(args, envArgs, prevA, adapter.Run{Output: res.Output, Exit: res.Exit}, forceTool)
+	return adapter.Extract(args, env, prevA, adapter.Run{Output: res.Output, Exit: res.Exit}, forceTool)
 }

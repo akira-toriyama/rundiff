@@ -34,7 +34,7 @@ func init() { register(cargoTest{}) }
 func (cargoTest) name() string { return "cargo-test" }
 
 func (cargoTest) hint(argv []string) bool {
-	return invokes(argv, "cargo") && hasWord(argv, "test")
+	return invokes(argv, "cargo") && hasWord(argv, "test", "t") // `t` is cargo's built-in test alias
 }
 
 func (cargoTest) match(lines []string) bool {
@@ -54,19 +54,45 @@ func (cargoTest) blockedFlags(argv []string) bool {
 	return hasFlag(argv, "--format", "--message-format", "-q", "--quiet") || hasFlagPrefix(argv, "-Z")
 }
 
+// cargoValueFlags consume the following token as a value — that token is a
+// package/target/feature selector (package-LEVEL, safe: identities are names,
+// which those don't filter), not a test-NAME filter, so its value must not be
+// mistaken for a positional name filter.
+var cargoValueFlags = map[string]bool{
+	"-p": true, "--package": true, "--features": true, "--target": true,
+	"--manifest-path": true, "-j": true, "--jobs": true, "--test": true,
+	"--bin": true, "--example": true, "--bench": true, "--exclude": true,
+	"--color": true,
+}
+
 func (cargoTest) selectionFlags(argv []string) bool {
-	// Any positional token after `test` is a NAME filter (cargo test foo;
-	// cargo test -- --exact name) — identities are names, so a rename escapes
-	// the same filter. Flag values can false-positive here; over-withholding
-	// the pair is the safe direction.
-	seenTest := false
-	for _, a := range argv {
-		if !seenTest {
-			seenTest = a == "test"
-			continue
+	// A test-NAME filter (a rename escapes it) is: a bare positional after the
+	// `test`/`t` subcommand and before `--`, or any libtest arg after `--`
+	// (a bare name, or --exact/--skip). Package/feature selection (-p, --features)
+	// is package-level and stays allowed.
+	i := 0
+	for ; i < len(argv); i++ {
+		if argv[i] == "test" || argv[i] == "t" {
+			i++
+			break
 		}
-		if a != "--" && !strings.HasPrefix(a, "-") {
-			return true
+	}
+	afterDD := false
+	for ; i < len(argv); i++ {
+		a := argv[i]
+		switch {
+		case a == "--":
+			afterDD = true
+		case afterDD:
+			if a == "--exact" || a == "--skip" || !strings.HasPrefix(a, "-") {
+				return true // a name filter (or its target) after --
+			}
+		case cargoValueFlags[a]:
+			i++ // skip the value: package/target/feature, not a name
+		case strings.HasPrefix(a, "-"):
+			// a glued/boolean flag (-p=…, --workspace, --release): not a name
+		default:
+			return true // a bare positional before -- is a name filter
 		}
 	}
 	return false

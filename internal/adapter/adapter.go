@@ -28,6 +28,7 @@ package adapter
 import (
 	"bytes"
 	"sort"
+	"strings"
 )
 
 // Guards duplicated from delta's G1/G2 constants (leaf rule: no shared import),
@@ -116,6 +117,28 @@ var parsers []parser
 
 func register(p parser) { parsers = append(parsers, p) }
 
+// parserEnv maps a tool to the environment variables whose contents change ITS
+// behavior (selection/format). The CLI can inject flags through these without
+// touching argv or the cache key, so the gates must see them — but ONLY for the
+// owning tool: GOFLAGS is Go's, PYTEST_ADDOPTS is pytest's, and a Go env var
+// must never withhold a pytest claim (or vice versa).
+var parserEnv = map[string][]string{
+	"go-test": {"GOFLAGS"},
+	"pytest":  {"PYTEST_ADDOPTS"},
+}
+
+// gateArgs is what a parser's blockedFlags/selectionFlags see: the tool's own
+// argument tokens (launcher stripped) plus the tokens of the env vars that
+// tool owns. env is the raw environment (var name → value); nil is fine.
+func gateArgs(argv []string, env map[string]string, p parser) []string {
+	_, toolArgs := resolveTool(argv)
+	out := append([]string{}, toolArgs...)
+	for _, name := range parserEnv[p.name()] {
+		out = append(out, strings.Fields(env[name])...)
+	}
+	return out
+}
+
 // Tools returns the registered parser names, sorted (for --tool validation).
 func Tools() []string {
 	names := make([]string, 0, len(parsers))
@@ -138,18 +161,16 @@ type resolution struct {
 
 // Extract parses both runs and returns a Claim, or nil when the current run
 // cannot be confidently parsed. prev == nil ⇒ baseline (Fixed/New stay nil).
-// envArgs carries selection-relevant tokens the CLI lifted from the
-// environment (GOFLAGS, PYTEST_ADDOPTS, … — tokenized): env-injected flags
-// change tool behavior without changing argv (or the cache key), so the
-// blocked/selection gates must see them too. forceTool: "" = auto-detect,
-// "none" = disabled, else a Tools() name — forcing selects a parser, it never
-// bypasses a gate (unknown names are the CLI's to reject; here they simply
-// select nothing).
-func Extract(argv []string, envArgs []string, prev *Run, cur Run, forceTool string) *Claim {
+// env is the raw environment (var name → value); the gates read the tokens of
+// each tool's OWN vars (GOFLAGS for go, PYTEST_ADDOPTS for pytest) so an
+// env-injected -run/-k reaches them even though it never touches argv or the
+// cache key. forceTool: "" = auto-detect, "none" = disabled, else a Tools()
+// name — forcing selects a parser, it never bypasses a gate (unknown names are
+// the CLI's to reject; here they simply select nothing).
+func Extract(argv []string, env map[string]string, prev *Run, cur Run, forceTool string) *Claim {
 	if forceTool == "none" {
 		return nil
 	}
-	flagView := append(append([]string{}, argv...), envArgs...)
 	var forced parser
 	if forceTool != "" {
 		for _, p := range parsers {
@@ -162,10 +183,10 @@ func Extract(argv []string, envArgs []string, prev *Run, cur Run, forceTool stri
 		}
 	}
 
-	curR := resolveRun(argv, flagView, cur, forced)
+	curR := resolveRun(argv, env, cur, forced)
 	var prevR resolution
 	if prev != nil {
-		prevR = resolveRun(argv, flagView, *prev, forced)
+		prevR = resolveRun(argv, env, *prev, forced)
 	}
 
 	// Silent-clean adoption: a run with exit 0 and blank output is claimable by
@@ -214,8 +235,11 @@ func Extract(argv []string, envArgs []string, prev *Run, cur Run, forceTool stri
 	// names or git state, so a rename or an unrelated edit silently deselects
 	// a still-failing test between runs with identical argv — a green subset
 	// run would read as a fix. Pass evidence proves nothing here; withhold the
-	// pair (failing, from lines actually printed, stays sound).
-	if curR.p.selectionFlags(flagView) {
+	// pair (failing, from lines actually printed, stays sound). Checked over
+	// the current argv+env; the baseline's env is unobservable (not cached), so
+	// a selection dropped between runs can still yield a false `new` — the safe
+	// direction (New ⊆ Failing: the identity genuinely fails now).
+	if curR.p.selectionFlags(gateArgs(argv, env, curR.p)) {
 		return claim
 	}
 
@@ -252,10 +276,10 @@ func Extract(argv []string, envArgs []string, prev *Run, cur Run, forceTool stri
 }
 
 // resolveRun runs the per-run gate pipeline: input guards (A1), candidate
-// selection + exactly-one match (A2), blocked flags (A3, over argv plus the
-// env-lifted tokens), parse + reconcile (A4, inside the parser), and the
+// selection + exactly-one match (A2), blocked flags (A3, over the tool's own
+// args plus its env), parse + reconcile (A4, inside the parser), and the
 // generic exit/size cross-checks (A5).
-func resolveRun(argv, flagView []string, r Run, forced parser) resolution {
+func resolveRun(argv []string, env map[string]string, r Run, forced parser) resolution {
 	if len(r.Output) > maxInputBytes || bytes.IndexByte(r.Output, 0) >= 0 {
 		return resolution{}
 	}
@@ -286,7 +310,7 @@ func resolveRun(argv, flagView []string, r Run, forced parser) resolution {
 		}
 		matched = p
 	}
-	if matched == nil || matched.blockedFlags(flagView) {
+	if matched == nil || matched.blockedFlags(gateArgs(argv, env, matched)) {
 		return resolution{}
 	}
 

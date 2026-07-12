@@ -143,8 +143,17 @@ conservative, never a lie.
   an excluded-but-still-broken file fixed. Exclusion edits change the config
   file, not argv, so rundiff cannot see them.
 - **Env-driven selection is covered only for `GOFLAGS` and `PYTEST_ADDOPTS`**
-  (lifted into the flag gates by the CLI). Other channels a tool might read
-  selection from are not scanned.
+  (each scoped to its owning tool). Other channels a tool might read selection
+  from are not scanned. And only the CURRENT run's env is seen — the baseline's
+  env is not cached, so a selection flag present at baseline time but dropped by
+  the current run can yield a false `new` (never a false `fixed`: `New ⊆
+  Failing`, so the named identity genuinely fails now — `new` is the safe
+  direction, "failing now, not observed failing before").
+- **cargo doc-test identity coarsens by item.** A doc-test's `(line N)`
+  position suffix is stripped, so two doc examples on the same item share one
+  identity; a fail→delete-then-add-a-passing-example across runs could read as
+  that item fixed. Cross-run only (same-run duplicates are refused); low
+  likelihood, and doc-tests rarely fail in the fix→test loop this targets.
 
 ### Claim invariants (enforced by tests + fuzz)
 

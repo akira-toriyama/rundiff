@@ -56,25 +56,31 @@ func TestSelectionFlagsWithholdThePair(t *testing.T) {
 	cgFail := loadCapture(t, "cargo-test", "fail")
 	cgPass := loadCapture(t, "cargo-test", "pass")
 
+	goflags := map[string]string{"GOFLAGS": "-run=TestX"}
+	pyaddopts := map[string]string{"PYTEST_ADDOPTS": "-k mul"}
+	testtestrun := map[string]string{"GOFLAGS": "-test.run=TestX"}
 	cases := []struct {
 		name string
 		argv []string
-		env  []string
+		env  map[string]string
 		prev Run
 		cur  Run
 	}{
 		{"go -run", []string{"go", "test", "-run", "TestX", "./..."}, nil, goFail, goPass},
 		{"go --skip", []string{"go", "test", "--skip", "TestX", "./..."}, nil, goFail, goPass},
-		{"go GOFLAGS env", []string{"go", "test", "./..."}, []string{"-run=TestX"}, goFail, goPass},
+		{"go -test.run", []string{"go", "test", "-test.run=TestX", "./..."}, nil, goFail, goPass},
+		{"go GOFLAGS env", []string{"go", "test", "./..."}, goflags, goFail, goPass},
+		{"go GOFLAGS -test.run env", []string{"go", "test", "./..."}, testtestrun, goFail, goPass},
 		{"pytest -k", []string{"pytest", "-k", "mul"}, nil, pyFail, pyPass},
 		{"pytest --lf", []string{"pytest", "--lf"}, nil, pyFail, pyPass},
-		{"pytest ADDOPTS env", []string{"pytest"}, []string{"-k", "mul"}, pyFail, pyPass},
+		{"pytest ADDOPTS env", []string{"pytest"}, pyaddopts, pyFail, pyPass},
 		{"jest -t", []string{"jest", "-t", "multiplies"}, nil, jestFail, jestPass},
 		{"jest --onlyChanged", []string{"jest", "--onlyChanged"}, nil, jestFail, jestPass},
 		{"jest --shard", []string{"jest", "--shard=1/2"}, nil, jestFail, jestPass},
 		{"vitest --changed", []string{"vitest", "run", "--changed"}, nil, vtFail, vtPass},
 		{"cargo name filter", []string{"cargo", "test", "test_mul"}, nil, cgFail, cgPass},
 		{"cargo -- filter", []string{"cargo", "test", "--", "test_mul"}, nil, cgFail, cgPass},
+		{"cargo t alias filter", []string{"cargo", "t", "test_mul"}, nil, cgFail, cgPass},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -292,5 +298,101 @@ func TestGoTest_doubleDashBlockedFlags(t *testing.T) {
 	pass := loadCapture(t, "go-test", "pass")
 	if got := Extract([]string{"go", "test", "--json", "./..."}, nil, &fail, pass, ""); got != nil {
 		t.Errorf("claim=%+v want nil (--json is -json)", got)
+	}
+}
+
+// go -v: an INDENTED subtest `--- SKIP:` still drops pass evidence (the mark is
+// 4-space-indented; the wipe must match after trimming).
+func TestGoTest_indentedSubtestSkip(t *testing.T) {
+	prev := Run{Exit: 1, Output: []byte(
+		"=== RUN   TestFoo\n=== RUN   TestFoo/sub\n    m_test.go:7: boom\n" +
+			"--- FAIL: TestFoo (0.00s)\n    --- FAIL: TestFoo/sub (0.00s)\n" +
+			"FAIL\nFAIL\texample.com/m\t0.38s\nFAIL\n")}
+	cur := Run{Exit: 0, Output: []byte(
+		"=== RUN   TestFoo\n=== RUN   TestFoo/sub\n    m_test.go:7: flaky\n" +
+			"--- PASS: TestFoo (0.00s)\n    --- SKIP: TestFoo/sub (0.00s)\n" +
+			"PASS\nok  \texample.com/m\t0.47s\n")}
+	got := Extract([]string{"go", "test", "-v", "./..."}, nil, &prev, cur, "")
+	if got == nil {
+		t.Fatal("nil claim")
+	}
+	if got.Fixed != nil {
+		t.Errorf("fixed=%v want nil pair (a skipped subtest is not a fix)", got.Fixed)
+	}
+}
+
+// npx -p <tool> <cmd>: the tool is npx's PACKAGE value, not the launched
+// command — a hint must not fire on it, so silent-clean adoption cannot mint a
+// claim for a command that is not tsc/eslint.
+func TestHint_launcherPackageValueIsNotTheTool(t *testing.T) {
+	tscFail := loadCapture(t, "tsc", "fail")
+	if got := Extract([]string{"npx", "-p", "tsc", "check"}, nil, &tscFail, Run{Exit: 0}, ""); got != nil {
+		t.Errorf("claim=%+v want nil (`check` is the command, tsc is only the package)", got)
+	}
+	if got := Extract([]string{"npm", "exec", "-w", "tsc", "build"}, nil, &tscFail, Run{Exit: 0}, ""); got != nil {
+		t.Errorf("claim=%+v want nil (`build` is the command)", got)
+	}
+}
+
+// vitest: an indented per-test `✓ name (...)` line must not mint file-level
+// pass evidence (its token is not path-shaped).
+func TestVitest_perTestCheckIsNotFileEvidence(t *testing.T) {
+	prev := Run{Exit: 1, Output: []byte(
+		" ❯ vtests/math.test.js (1 test | 1 failed)\n FAIL  vtests/math.test.js > multiplies\n" +
+			" Test Files  1 failed (1)\n      Tests  1 failed (1)\n")}
+	// cur: the file is deleted; another file's expansion carries a per-test ✓
+	// whose name is not path-shaped.
+	cur := Run{Exit: 1, Output: []byte(
+		" ❯ vtests/other.test.js (2 tests | 1 failed)\n" +
+			"   ✓ parses the header (edge) 1ms\n" +
+			" FAIL  vtests/other.test.js > writes\n" +
+			" Test Files  1 failed (1)\n      Tests  1 failed | 1 passed (2)\n")}
+	got := Extract([]string{"vitest", "run"}, nil, &prev, cur, "")
+	if got == nil {
+		return // abstention is safe
+	}
+	if got.Fixed != nil {
+		t.Errorf("fixed=%v want nil pair (a per-test ✓ is not file pass evidence)", got.Fixed)
+	}
+}
+
+// Regressions — the fixes must NOT withhold legitimate bread-and-butter claims.
+
+// python -m pytest fail→pass still claims fixed (the interpreter's -m is not a
+// pytest marker flag).
+func TestPytest_pythonDashMStillClaims(t *testing.T) {
+	prev := loadCapture(t, "pytest", "fail")
+	pass := loadCapture(t, "pytest", "pass")
+	got := Extract([]string{"python", "-m", "pytest"}, nil, &prev, pass, "")
+	if got == nil || !reflect.DeepEqual(got.Fixed, []string{"tests/test_math.py"}) {
+		t.Errorf("python -m pytest fail→pass: got %+v want fixed=[tests/test_math.py]", got)
+	}
+}
+
+// A Go env var must never withhold a pytest claim (GOFLAGS is scoped to go).
+func TestPytest_goflagsDoesNotWithhold(t *testing.T) {
+	prev := loadCapture(t, "pytest", "fail")
+	pass := loadCapture(t, "pytest", "pass")
+	env := map[string]string{"GOFLAGS": "-mod=mod"}
+	got := Extract([]string{"pytest"}, env, &prev, pass, "")
+	if got == nil || got.Fixed == nil {
+		t.Errorf("GOFLAGS must not touch pytest: got %+v", got)
+	}
+}
+
+// cargo test -p <crate> / --features is package-LEVEL selection, not a name
+// filter — the pair must still be claimed.
+func TestCargo_packageSelectionStillClaims(t *testing.T) {
+	prev := loadCapture(t, "cargo-test", "fail")
+	pass := loadCapture(t, "cargo-test", "pass")
+	for _, argv := range [][]string{
+		{"cargo", "test", "-p", "fixture"},
+		{"cargo", "test", "--features", "extra"},
+		{"cargo", "test", "--workspace"},
+	} {
+		got := Extract(argv, nil, &prev, pass, "")
+		if got == nil || !reflect.DeepEqual(got.Fixed, []string{"tests::test_mul"}) {
+			t.Errorf("argv=%v: got %+v want fixed=[tests::test_mul]", argv, got)
+		}
 	}
 }
