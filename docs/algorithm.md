@@ -81,7 +81,60 @@ rendered body); symmetry (`added(a,b) == removed(b,a)`); determinism (same input
 nulls the counts; `baseline_age_s ≥ 0`; verbatim-subset (every displayed line is a
 raw input line). See `internal/delta/*_test.go` and `FuzzDiff`/`FuzzNormalize`.
 
+## File-level adapter (`tool` / `failing` / `fixed` / `new`)
+
+`internal/adapter` is a second pure leaf beside delta: it re-parses the raw
+bytes of both runs (the cache stores raw output), recognizes one of seven tools
+from **output fingerprints** (argv is a candidate filter, never proof), and
+turns the pair into a file-level claim. Its safety stance inverts the line
+diff's: a delta degrades — it shows *more* when unsure — but a claim cannot
+degrade; its failure mode is a false statement, and a false `fixed:["x"]` makes
+an agent stop looking. So **when unsure, the adapter says nothing**: `null`
+(no claim) is distinct from `[]` (confidently none).
+
+Identity per tool: file paths (pytest nodeids coarsened to the file; jest /
+vitest suite paths; tsc / eslint diagnostic paths), the package import path for
+`go test`, the `module::case` test name for `cargo test`.
+
+### Gate pipeline (failure ⇒ silence at the stated scope)
+
+| # | gate | condition for silence |
+|---|---|---|
+| A0 | kill switch | `--tool none` |
+| A1 | input guards | run > 8 MiB, > 50 000 lines, or a NUL byte |
+| A2 | selection | argv-hint-narrowed candidates; **exactly one** parser's fingerprint may match; both runs must resolve to the same parser (silent-clean exception: an empty exit-0 run is claimable by a `silentWhenClean` tool — tsc, eslint — adopted from the other run's parser plus an agreeing argv hint or `--tool`) |
+| A3 | blocked flags | an argv flag that changes the tool's format or exit semantics (`go test -json`, `jest --watch`, `eslint -f`, `tsc --incremental`, …) |
+| A4 | parse + reconcile | the tool's sentinel ("run finished" line) missing, or the extracted failing count disagrees with the tool's own summary counts |
+| A5 | exit cross-check + cap | exit outside the tool's accepted set; `(exit==0) ⇎ (failing empty)`; signal exit; > 200 identities |
+| A6 | comparability | baseline, unparsed previous run, or a different tool ⇒ `fixed`/`new` null (`failing` survives) |
+| A7 | strict accounting | any previously-failing identity lacking positive evidence in the current run ⇒ `fixed`/`new` null together |
+
+A7 is the load-bearing rule: **`fixed` is never inferred from absence.** Every
+previously-failing identity must still be failing, carry per-identity pass
+evidence (`ok pkg`, `PASS file`, `test x ... ok`, a clean pytest progress
+line), or be covered by a global clean-run proof (exit 0 plus the tool's own
+zero-failure output). An identity the tool positively reports as *not run*
+(go's `? pkg [no test files]`, cargo's `... ignored`, a fully-skipped pytest
+file) defeats both — skipping or deleting a failure is not fixing it. This
+structurally neutralizes bail/fail-fast, varying selection (`--lf`,
+`--onlyChanged`, shards), renames and truncation without flag archaeology.
+
+### Claim invariants (enforced by tests + fuzz)
+
+`tool = null ⇔ failing = null`; `fixed = null ⇔ new = null`; sorted, deduped;
+`new ⊆ failing`; `fixed ∩ failing = ∅`; `exit 0 ⇒ failing = []` (when non-null);
+`prev_exit 0 ⇒ fixed = []`; a baseline never carries `fixed`/`new`; every
+identity is a substring of the (ANSI-stripped) output of the run it is
+attributed to; determinism. The claim channel is independent of G1–G7: a
+degraded line diff does not silence the adapter, which is exactly its payoff —
+line 1 still names what was fixed and what broke when the body is a bounded
+full view. The mechanized safety theorem (`TestExtract_neverFalseFixed`)
+deletes every single line of the current output in turn and asserts a
+still-failing identity is never claimed fixed; a new or changed parser must
+keep it green.
+
 ## Deferred (see docs/non-goals.md)
 
-The file-level `fixed`/`new` adapter layer is planned but not in this version; the
-JSON schema reserves room for it.
+Multi-tool composite outputs (one run printing both tsc and eslint shapes) are
+refused by A2's exactly-one rule and deferred, as are additional capture eras
+per tool.

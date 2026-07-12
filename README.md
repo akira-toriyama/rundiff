@@ -76,6 +76,24 @@ delta body follows; with `--json` the whole record is that one object.
 | `--raw` | compare raw lines with no noise-cancelling normalization |
 | `--full` | show the bounded full current output as the body, even when a trusted delta exists |
 | `--churn <0..1>` | degrade to full output when the changed fraction reaches this (default `0.5`) |
+| `--tool <name\|none>` | force (`go-test`, `pytest`, `jest`, `vitest`, `cargo-test`, `tsc`, `eslint`) or disable (`none`) the file-level failure adapter; default: auto-detect |
+
+### File-level `fixed` / `new`
+
+When the wrapped command's output is recognized as one of the supported tools,
+rundiff also reports failures at **file level** (package level for `go test`,
+test names for `cargo test`): `failing` is the current run's complete failing
+set, and `fixed` / `new` name what stopped and started failing since the
+baseline. This channel parses the raw bytes of both runs itself, so it survives
+exactly the huge-churn runs where the line delta degrades.
+
+Its safety bias is the inverse of the line diff's: a wrong `fixed` claim would
+make an agent stop looking, so **when unsure the adapter says nothing** —
+`null`, which is different from `[]` ("confidently nothing"). A claim is only
+made when the tool's output parses completely, its own counts reconcile, both
+runs come from the same tool, and every previously-failing identity is
+accounted for by positive evidence (a pass line, or a provably clean run —
+where skipping/deleting a failing test does *not* count as fixing it).
 
 ### The JSON contract
 
@@ -99,6 +117,9 @@ no trustworthy line diff was computed (baseline, or a degrade that nulls counts)
 | `truncated` | bool | body/arrays clipped by a budget |
 | `added_lines` / `removed_lines` | []string | `--json`, non-degraded, **not** `--full`: raw representative lines |
 | `body` | string | `--json` on baseline / degrade / `--full`: the bounded full output |
+| `tool` | string \| null | recognized tool whose current-run output parsed completely; `null` = no claim |
+| `failing` | []string \| null | the current run's complete failing identities; `null` = no claim (**not** "nothing failing"), `[]` = confidently none |
+| `fixed` / `new` | []string \| null | cross-run claim: previously-failing identities *proven* not failing now / currently-failing identities not observed failing before; `null` or non-null together |
 
 ## Exit codes
 

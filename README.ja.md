@@ -69,6 +69,22 @@ $ rundiff [flags] -- <command> [args...]
 | `--raw` | 正規化なしで生の行を比較する |
 | `--full` | 信用できる差分があっても bounded な full 出力をボディに出す |
 | `--churn <0..1>` | 変化割合がこの値に達したら full 出力に degrade する（既定 `0.5`） |
+| `--tool <name\|none>` | ファイルレベル failure adapter の強制（`go-test`・`pytest`・`jest`・`vitest`・`cargo-test`・`tsc`・`eslint`）または無効化（`none`）。既定は自動検出 |
+
+### ファイルレベルの `fixed` / `new`
+
+ラップしたコマンドの出力が対応ツールのものと認識されると、rundiff は失敗を
+**ファイルレベル**でも報告する（`go test` は package、`cargo test` はテスト名）。
+`failing` は現在の run の完全な失敗集合、`fixed` / `new` はベースライン以降に
+失敗しなくなった／新たに失敗し始めたもの。このチャネルは両 run の生バイトを
+自前で解析するので、行差分が degrade するような大変動 run でもちょうど生き残る。
+
+安全バイアスは行差分の逆向き：誤った `fixed` 主張は agent の探索を止めて
+しまうため、**不確かなら何も言わない** —— `null` であり、`[]`（自信を持って
+「なし」）とは異なる。主張が出るのは、ツール出力が完全に解析でき、ツール自身の
+カウントと照合が取れ、両 run が同一ツールで、かつ過去に失敗していた identity
+すべてが積極的証拠（pass 行、または証明可能なクリーン run）で説明できるとき
+だけ（失敗テストの skip や削除は fix と数えない）。
 
 ### JSON 契約
 
@@ -92,6 +108,9 @@ $ rundiff [flags] -- <command> [args...]
 | `truncated` | bool | ボディ/配列が予算で切られた |
 | `added_lines` / `removed_lines` | []string | `--json` かつ非 degrade かつ非 `--full`: 生の代表行 |
 | `body` | string | `--json` のベースライン/degrade/`--full`: bounded full 出力 |
+| `tool` | string \| null | 現 run の出力を完全に解析できた認識ツール。`null` = 無主張 |
+| `failing` | []string \| null | 現 run の完全な失敗 identity 集合。`null` = 無主張（「失敗なし」では**ない**）、`[]` = 自信を持って「なし」 |
+| `fixed` / `new` | []string \| null | run 間の主張：失敗しなくなったと*証明された* identity ／ 以前は失敗が観測されていなかった現失敗 identity。`null` か非 null かは常に対 |
 
 ## 終了コード
 

@@ -19,13 +19,20 @@ What rundiff deliberately does **not** do, so the tool stays small and composabl
   numbers, dates, `0x…` values and git shas are left alone by default even though
   they add noise, because masking them could hide a real diff.
 
+- **Multi-tool composite runs.** The file-level adapter claims a run only when
+  exactly ONE tool's output fingerprint matches. A script that runs tsc *and*
+  eslint in one invocation is ambiguous — attributing identities across two
+  interleaved formats risks a false claim, so the adapter stays silent. Wrap
+  the tools separately to get per-tool claims.
+
 ## Deferred (candidates for a later version)
 
-- **File-level `fixed` / `new` adapters.** The line-level `added_lines` /
-  `removed_lines` are generic. An adapter layer (jest / vitest / pytest / cargo /
-  go test / tsc / eslint) would post-process those into `fixed: ["src/x.test.ts"]`
-  / `new: [...]` file arrays. The JSON schema reserves those top-level keys; the
-  core never emits them under `v:1`.
+- **Adapter parsers for more tools / more output eras.** v1 recognizes go test,
+  pytest, jest, vitest, cargo test, tsc and eslint, with fixtures captured from
+  one era of each (see `internal/adapter/testdata/captures/*/VERSIONS`).
+  Format drift in a future tool version fails the fingerprint or the count
+  reconciliation and the adapter abstains — never lies — but re-capturing new
+  eras (and adding tools) is ongoing work.
 - **`--baseline <id>` history.** Today rundiff keeps one baseline per key (the
   last run). Pinning an older comparison point needs a per-key run history.
 - **A Claude Code `PreToolUse` hook** that auto-wraps target commands, so an
