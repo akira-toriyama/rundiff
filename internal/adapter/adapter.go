@@ -156,7 +156,7 @@ func Extract(argv []string, prev *Run, cur Run, forceTool string) *Claim {
 	adopt := func(other resolution) (resolution, bool) {
 		if other.ok && other.p.silentWhenClean() && (forced != nil || other.p.hint(argv)) {
 			return resolution{
-				p:  other.p,
+				p: other.p,
 				res: parseResult{
 					failing:  map[string]struct{}{},
 					passing:  map[string]struct{}{},
