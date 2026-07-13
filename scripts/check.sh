@@ -58,5 +58,25 @@ printf 'a\nb\nc\n' > "$F"
 # a changed line surfaces as one added (counts stay real even when degraded)
 printf 'a\nX\nc\n' > "$F"
 "$BIN" --json -- cat "$F" | grep -q '"added":1'
+
+echo "→ smoke: hook rewrite (the protocol, end to end) / hook print"
+EV='{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"go test ./...","timeout":600000}}'
+# a target command is rewritten to DIRECT argv (never a shell string — a shell
+# blinds the adapter's whole-token gates, see docs/algorithm.md A7)
+printf '%s' "$EV" | "$BIN" hook rewrite | grep -q '"command":"rundiff -- go test \./\.\.\."'
+# the whole tool_input is echoed back: a dropped timeout would silently shorten a run
+printf '%s' "$EV" | "$BIN" hook rewrite | grep -q '"timeout":600000'
+# it never approves anything on the user's behalf
+! printf '%s' "$EV" | "$BIN" hook rewrite | grep -q 'permissionDecision'
+# a metacharacter ⇒ no decision: zero bytes, exit 0
+PIPED='{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"go test ./... | tee log"}}'
+test -z "$(printf '%s' "$PIPED" | "$BIN" hook rewrite)"
+# garbage in ⇒ still zero bytes, still exit 0 (it runs before EVERY Bash call)
+test -z "$(echo 'not json' | "$BIN" hook rewrite)"
+# the snippet carries the missing-binary guard and never blanket-approves rundiff
+"$BIN" hook print --json | grep -q 'command -v rundiff'
+! "$BIN" hook print --json | grep -q 'Bash(rundiff:\*)'
+"$BIN" hook print --json | python3 -c 'import json,sys; json.load(sys.stdin)'
+
 rm -rf "$RUNDIFF_CACHE_DIR" "$D"
 echo "✓ all checks passed"

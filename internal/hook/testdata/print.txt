@@ -1,0 +1,94 @@
+# rundiff PreToolUse hook — merge into .claude/settings.json.
+#
+# WHAT IT REWRITES. A Bash command whose argv begins with one of the test
+# commands listed under permissions.allow below (go test, pytest, jest,
+# vitest run, cargo test, tsc, eslint, and their npx / pnpm exec / python -m
+# forms) is re-pointed through rundiff: `go test ./...` runs as
+# `rundiff -- go test ./...`. A leading `cd <dir> && ` is carried across
+# unchanged.
+#
+# WHAT IT CONSPICUOUSLY DOES NOT. Anything containing a pipe, a redirect, a
+# `&&` chain (other than the leading `cd`), a glob, a quote, a `$(…)`, or a
+# non-ASCII byte is left exactly as typed — as is any command with an env
+# prefix (`FOO=1 go test`), any `npm test` / `pnpm test` / `npm run <script>`,
+# and anything carrying a watch, interactive, or machine-output flag
+# (--watch, --ui, --json, --reporter, -f, --collect-only, --help, …).
+#
+# The reason is one sentence: rundiff REPLACES a command's stdout with a JSON
+# record plus a delta of what changed. So rewriting a command whose stdout is
+# consumed downstream — piped, redirected, captured — would feed the consumer
+# rundiff's output instead of the tool's and break it. `npm test` hides its
+# script body from argv, so it may be a watcher or a pipeline and cannot be
+# vouched for. A watch flag is worse still: rundiff buffers and gives the
+# child no TTY, so a wrapped watcher hangs forever having printed nothing.
+# Bare `vitest` IS watch mode, which is why only `vitest run` is listed.
+#
+# ESCAPE HATCHES. Two, and neither needs this file edited:
+#   RUNDIFF_HOOK=0 go test ./...   — an env prefix is never rewritten.
+#   rundiff --full -- go test ./...   — reprints the last full output from
+#                                     the cache without re-running anything.
+#
+# THE `command -v` GUARD. The hook is a no-op when rundiff is not installed.
+# Without it, every Bash call in every session would fail on a missing binary.
+# There is deliberately no `exec` in the command string, so `|| exit 0` stays
+# reachable for a rundiff too old to have the `hook rewrite` subcommand — an
+# upgrade-lagged install degrades to 'no rewrite', not to 'an error on every
+# command'. /bin/sh is invoked in exec form so the user's login profile cannot
+# print anything onto the hook's stdout, which must be JSON and nothing else.
+#
+# WHY THE PERMISSION ENTRIES. The hook never returns a permissionDecision — it
+# only supplies updatedInput — so Claude Code re-checks permissions against the
+# REWRITTEN command string. An existing `Bash(go test:*)` does NOT cover
+# `rundiff -- go test ./...`, so without these entries every wrapped command
+# would prompt. Each entry is one target, verbatim.
+#
+# ⚠ NEVER collapse them into `Bash(rundiff:*)`. rundiff execs whatever argv it
+# is handed, so that single entry approves every command on the machine — it is
+# `Bash(*)` in a costume. The narrow entries are the only thing standing
+# between this hook and a blanket exec grant.
+#
+# The `cd <dir> && <test cmd>` form additionally needs whatever `Bash(cd:*)`
+# rule you already use for `cd` — this file does not grant it.
+#
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh",
+            "args": [
+              "-c",
+              "command -v rundiff >/dev/null 2>&1 && rundiff hook rewrite || exit 0"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(rundiff -- go test:*)",
+      "Bash(rundiff -- pytest:*)",
+      "Bash(rundiff -- py.test:*)",
+      "Bash(rundiff -- python -m pytest:*)",
+      "Bash(rundiff -- python3 -m pytest:*)",
+      "Bash(rundiff -- jest:*)",
+      "Bash(rundiff -- npx jest:*)",
+      "Bash(rundiff -- pnpm exec jest:*)",
+      "Bash(rundiff -- vitest run:*)",
+      "Bash(rundiff -- npx vitest run:*)",
+      "Bash(rundiff -- pnpm exec vitest run:*)",
+      "Bash(rundiff -- cargo test:*)",
+      "Bash(rundiff -- tsc:*)",
+      "Bash(rundiff -- npx tsc:*)",
+      "Bash(rundiff -- pnpm exec tsc:*)",
+      "Bash(rundiff -- eslint:*)",
+      "Bash(rundiff -- npx eslint:*)",
+      "Bash(rundiff -- pnpm exec eslint:*)"
+    ]
+  }
+}

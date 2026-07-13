@@ -1,0 +1,42 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh",
+            "args": [
+              "-c",
+              "command -v rundiff >/dev/null 2>&1 && rundiff hook rewrite || exit 0"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(rundiff -- go test:*)",
+      "Bash(rundiff -- pytest:*)",
+      "Bash(rundiff -- py.test:*)",
+      "Bash(rundiff -- python -m pytest:*)",
+      "Bash(rundiff -- python3 -m pytest:*)",
+      "Bash(rundiff -- jest:*)",
+      "Bash(rundiff -- npx jest:*)",
+      "Bash(rundiff -- pnpm exec jest:*)",
+      "Bash(rundiff -- vitest run:*)",
+      "Bash(rundiff -- npx vitest run:*)",
+      "Bash(rundiff -- pnpm exec vitest run:*)",
+      "Bash(rundiff -- cargo test:*)",
+      "Bash(rundiff -- tsc:*)",
+      "Bash(rundiff -- npx tsc:*)",
+      "Bash(rundiff -- pnpm exec tsc:*)",
+      "Bash(rundiff -- eslint:*)",
+      "Bash(rundiff -- npx eslint:*)",
+      "Bash(rundiff -- pnpm exec eslint:*)"
+    ]
+  }
+}

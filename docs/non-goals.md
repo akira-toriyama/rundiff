@@ -25,6 +25,23 @@ What rundiff deliberately does **not** do, so the tool stays small and composabl
   interleaved formats risks a false claim, so the adapter stays silent. Wrap
   the tools separately to get per-tool claims.
 
+- **Auto-wrapping arbitrary commands.** The `PreToolUse` hook rewrites only a
+  metacharacter-free, direct-argv invocation of a recognized test tool. Every
+  refusal is load-bearing, not laziness: rundiff *replaces* a command's stdout
+  with a record plus a delta, so anything whose stdout is read downstream (a
+  pipe, a redirect, a `$(…)`) must not be wrapped; `npm test`'s script body is
+  invisible and may be a watcher, and a wrapped watcher hangs forever with no
+  output; a quoted or globbed argument cannot be re-emitted as direct argv
+  without a shell, and rewriting into `bash -lc` would blind the adapter's
+  argv gates (see docs/algorithm.md A7/A9). When unsure, the hook does not
+  rewrite — the command simply runs unwrapped.
+
+- **Writing your Claude Code config.** `rundiff hook print` emits the snippet to
+  stdout; merging it is yours (or your dotfiles') to do. A tool that edits
+  `~/.claude/settings.json` owns a file it did not create, next to a permission
+  allowlist a bad write would destroy, on a machine whose state it cannot
+  reproduce.
+
 ## Deferred (candidates for a later version)
 
 - **Adapter parsers for more tools / more output eras.** v1 recognizes go test,
@@ -37,8 +54,19 @@ What rundiff deliberately does **not** do, so the tool stays small and composabl
   eras (and adding tools) is ongoing work.
 - **`--baseline <id>` history.** Today rundiff keeps one baseline per key (the
   last run). Pinning an older comparison point needs a per-key run history.
-- **A Claude Code `PreToolUse` hook** that auto-wraps target commands, so an
-  agent gets the delta without remembering to prefix `rundiff --`.
+- **Package scripts (`npm test`) in the hook.** Reading the script body out of
+  `package.json` would let the hook wrap the command agents most often type — but
+  it must first prove the body is not a watcher, and a pure leaf cannot read a
+  file. Deliberately forfeited for now: a wrapped watcher hangs with no output,
+  which is a far worse failure than not wrapping.
+- **Quoted arguments in the hook** (`pytest -k "a or b"`). Surviving the
+  round-trip needs a shell-faithful tokenizer *and* re-quoter. Largely
+  self-cancelling: those are close to exactly the runs the adapter's selection
+  gates (A7) already refuse to claim on.
+- **Env-prefixed commands in the hook** (`GOFLAGS=… go test`). Hoisting the
+  prefix is easy; the problem is that the environment is not part of the cache
+  key, so two different selections would collide on one baseline. The key has to
+  grow first.
 - **CLI flags for the per-rule escapes and opt-in normalization**
   (`--no-time`, `--normalize-ptr`, …). They exist in the core `Options`; only a
   curated subset (`--json`, `--raw`, `--full`, `--churn`) is wired to the CLI.
