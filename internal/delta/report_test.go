@@ -120,3 +120,33 @@ func TestDiff_interruptedComparesNothing(t *testing.T) {
 		t.Errorf("body must show the partial capture, got:\n%s", body)
 	}
 }
+
+// The delta body must name itself. An agent whose command was wrapped by the
+// hook did not type `rundiff`; if it reads a handful of lines where it expected
+// a test log, the cheapest resolution it has is to run the command again
+// unwrapped — and then the tool has cost more than it saved (the failure mode
+// rtk#582 measured at +18% tokens). The legend is what makes that unnecessary.
+func TestDelta_legendNamesTheOmission(t *testing.T) {
+	prev := bigRun(1, "keep", "gone")
+	cur := bigRun(1, "keep", "fresh")
+
+	_, body := Render(Diff(&prev, cur, Meta{Key: "k"}, Options{}), Options{})
+	if !strings.Contains(body, "delta only") || !strings.Contains(body, "--full") {
+		t.Errorf("a non-empty delta must say what is omitted and how to get it back:\n%s", body)
+	}
+
+	// The empty delta is the most confusing output rundiff can produce (the
+	// command ran; there is nothing to show) and the most common one in a
+	// fix→test loop, so it gets the explicit form.
+	_, body = Render(Diff(&prev, prev, Meta{Key: "k"}, Options{}), Options{})
+	if !strings.Contains(body, "nothing changed") || !strings.Contains(body, "identical") {
+		t.Errorf("an empty delta must say so in words:\n%s", body)
+	}
+
+	// …and none of it leaks into the machine channel, where the counts already
+	// say it and prose would just be tokens.
+	line, jsonBody := Render(Diff(&prev, cur, Meta{Key: "k"}, Options{JSON: true}), Options{JSON: true})
+	if jsonBody != "" || strings.Contains(string(line), "delta only") {
+		t.Errorf("prose leaked into --json:\nline: %s\nbody: %q", line, jsonBody)
+	}
+}
