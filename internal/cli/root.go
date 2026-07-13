@@ -36,6 +36,13 @@ import (
 // A propagated 125/126/127/130 is indistinguishable from rundiff's own only by
 // the number; the machine-readable JSON line on stdout disambiguates (rundiff's
 // own errors emit no JSON line and print to stderr).
+//
+// The contract is per-command: stdout is a machine API, and WHICH machine API is
+// chosen by the command. `rundiff [flags] -- <cmd>` (wrapper mode) is the one
+// above. `rundiff hook rewrite` speaks Claude Code's hook schema instead — and
+// is TOTAL: it wraps nothing, so the 125/126/127/130 codes do not apply, and it
+// always exits 0 (see hook.go). `rundiff hook print` and `rundiff version` print
+// their own payloads. In every mode diagnostics go to stderr, never stdout.
 const (
 	codeRundiff       = 125
 	codeNotExecutable = 126
@@ -127,7 +134,7 @@ func newRootCmd() *cobra.Command {
 
 	root.Version = versionLine()
 	root.SetVersionTemplate("rundiff {{.Version}}\n")
-	root.AddCommand(newVersionCmd())
+	root.AddCommand(newVersionCmd(), newHookCmd())
 	return root
 }
 

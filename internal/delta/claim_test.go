@@ -88,8 +88,8 @@ func TestClaim_baselineDropsCrossRun(t *testing.T) {
 	}
 }
 
-// Text mode: non-empty fixed/new render as compact lines between the header and
-// the delta body; empty claims render nothing extra.
+// Text mode: non-empty fixed/new render as compact lines above the delta body
+// (under the header and its legend); empty claims render nothing extra.
 func TestClaim_textDeltaLines(t *testing.T) {
 	prev := bigRun(1, "keep", "gone")
 	cur := bigRun(1, "keep", "fresh")
@@ -97,8 +97,12 @@ func TestClaim_textDeltaLines(t *testing.T) {
 	r := Diff(&prev, cur, claimMeta(c), Options{})
 	_, body := Render(r, Options{})
 	lines := strings.Split(body, "\n")
-	if len(lines) < 3 || lines[1] != "fixed (jest): a.test.ts" || lines[2] != "new (jest): b.test.ts" {
-		t.Errorf("claim lines not rendered after header:\n%s", body)
+	if len(lines) < 4 || lines[2] != "fixed (jest): a.test.ts" || lines[3] != "new (jest): b.test.ts" {
+		t.Errorf("claim lines not rendered above the delta:\n%s", body)
+	}
+	// The claim outranks the diff lines: it is what an agent reads first.
+	if i, j := strings.Index(body, "fixed (jest)"), strings.Index(body, "- gone"); i > j {
+		t.Errorf("claim rendered below the diff lines:\n%s", body)
 	}
 	if !strings.Contains(body, "- gone") || !strings.Contains(body, "+ fresh") {
 		t.Errorf("delta body lost its diff lines:\n%s", body)

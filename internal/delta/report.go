@@ -119,6 +119,13 @@ func (r *Report) delta(dc diffCounts, opt Options) {
 	}
 	var b strings.Builder
 	b.WriteString(r.headerDelta())
+	// Name what this body is. A reader who did not type `rundiff` — an agent whose
+	// command was wrapped by the hook — sees a handful of lines where it expected
+	// a test log, and the cheapest way for it to resolve that is to run the
+	// command again, unwrapped: the tool then costs MORE than it saves. One line
+	// naming the omission, and the way to undo it, is what stops that.
+	b.WriteString("\n")
+	b.WriteString(r.legend())
 	// Non-empty cross-run claims render before the line delta — they are the
 	// agent's first read. Empty/absent claims stay silent (the JSON carries the
 	// null-vs-[] distinction).
@@ -139,6 +146,28 @@ func (r *Report) delta(dc diffCounts, opt Options) {
 		b.WriteString(clip(l))
 	}
 	r.textBody = b.String()
+}
+
+// legend is the one line that makes a delta body self-describing. Text mode
+// only: in --json the reader is a program that has the counts as fields, and
+// prose there would be tokens spent to say what `added: 0` already says.
+//
+// The empty delta gets the longer form on purpose. It is the most confusing
+// output rundiff produces — the command ran, and there is nothing to show —
+// and it is also the most common one in a fix→test loop, where the first thing
+// an agent does after an edit is re-run the suite that is still broken in the
+// same way.
+func (r *Report) legend() string {
+	unchanged := 0
+	if r.Unchanged != nil {
+		unchanged = *r.Unchanged
+	}
+	if r.Added != nil && r.Removed != nil && *r.Added == 0 && *r.Removed == 0 {
+		return fmt.Sprintf("   nothing changed since the previous run of this command: its output was identical "+
+			"(%d lines, all unchanged). The previous output still stands; `rundiff --full -- …` re-runs the "+
+			"command and shows its whole output instead of the delta.", unchanged)
+	}
+	return fmt.Sprintf("   (delta only: %d unchanged line(s) omitted; `rundiff --full -- …` re-runs and shows the whole output)", unchanged)
 }
 
 // claimLine renders one file-level claim list, clipped like any displayed

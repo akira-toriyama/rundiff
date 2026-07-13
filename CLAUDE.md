@@ -7,7 +7,7 @@ to [`pare`](https://github.com/akira-toriyama/pare) (space-direction) on the tim
 axis. See [README.md](README.md) for behavior and
 [docs/algorithm.md](docs/algorithm.md) for the diff/normalize/degrade spec.
 
-## Layout (dependency rule: cmd → cli → {delta, adapter, cache, runner, version}; delta and adapter import nothing local)
+## Layout (dependency rule: cmd → cli → {delta, adapter, hook, cache, runner, version}; delta, adapter and hook import nothing local)
 
 - `cmd/rundiff/main.go` — thin entry; just `os.Exit(cli.Execute())`.
 - `internal/delta` — the **pure** core (no I/O, no clock, no globals). Normalize,
@@ -19,6 +19,12 @@ axis. See [README.md](README.md) for behavior and
   cargo test / tsc / eslint) and extracts the file-level
   `failing`/`fixed`/`new` claim. Bias: **when unsure, say nothing** (nil) — a
   false `fixed` stops an agent looking. Fuzzed.
+- `internal/hook` — the third pure leaf: decides whether a Claude Code Bash
+  command can be auto-wrapped with `rundiff --`, and renders the settings
+  snippet. Bias, the adapter's transposed: **when unsure, do not rewrite** — a
+  wrong rewrite silently changes what command runs. It emits DIRECT argv (never
+  `bash -lc`), because a shell wrapper blinds the adapter's whole-token gates.
+  Fuzzed, including against a real `/bin/sh`.
 - `internal/runner` — runs the wrapped command (combined capture, exit code,
   git branch). The only subprocess adapter.
 - `internal/cache` — per-key baseline persistence (XDG dir, atomic writes, stores
@@ -32,8 +38,12 @@ axis. See [README.md](README.md) for behavior and
   `test -race` / docs guard / lint / vulncheck / smoke). Green here ⇒ green CI.
 - **Exit codes:** rundiff *propagates* the wrapped command's exit code, and
   reserves `125` (own error) · `126` (not executable) · `127` (not found) · `130`
-  (interrupted). rundiff's own errors go to **stderr** and emit no JSON line;
-  stdout stays a clean machine API (line 1 is always the JSON record).
+  (interrupted). rundiff's own errors go to **stderr** and emit no JSON line.
+  stdout is a machine API, and *which* one is chosen by the command: in wrapper
+  mode (`rundiff -- <cmd>`) line 1 is always the run record; `rundiff hook
+  rewrite` speaks Claude Code's hook schema instead and is **total** — it wraps
+  nothing, so those codes do not apply and it always exits 0 (never 2, which
+  would block the agent's command; a hook that cannot decide writes nothing).
 - **Safety rule:** normalization must never hide a real change. New rules go in
   the default-ON set only if they cancel provably run-varying chrome; anything
   that could be asserted data is opt-in. Add a case to
@@ -41,6 +51,10 @@ axis. See [README.md](README.md) for behavior and
   **never claim what isn't proven** — a wrong `fixed` is worse than no claim.
   A new or changed parser must keep `TestExtract_neverFalseFixed` (the
   line-deletion sweep) green and reconcile against the tool's own counts.
+  Hook clause: **never rewrite what cannot be expressed as direct argv.** A new
+  or changed rewrite rule must keep `TestRewrite_neverWrapsWhatItCannotExpress`
+  (the metacharacter sweep) green, and `hook.Targets()` must stay in sync with
+  `adapter.Tools()` (`TestHookTargets_coverAdapterTools`).
 - **Commits:** gitmoji + Conventional Commits
   ([CONTRIBUTING](https://github.com/akira-toriyama/.github/blob/main/CONTRIBUTING.md)).
   Enable the hook: `git config core.hooksPath scripts/hooks`.

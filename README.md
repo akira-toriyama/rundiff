@@ -149,6 +149,61 @@ is compared (`transition: "interrupted"`), no claim is made, and **the baseline 
 left untouched**, so the next complete run still diffs against the last complete
 one.
 
+## Claude Code hook (optional)
+
+A per-invocation prefix loses to habit: an agent that has to remember
+`rundiff --` will forget it, and the baseline never accumulates. The optional
+`PreToolUse` hook wraps the commands worth wrapping, so the agent types
+`go test ./...` and reads the delta.
+
+```sh
+rundiff hook print          # the settings.json snippet, commented
+rundiff hook print --json   # the bare object, for jq / chezmoi to merge
+```
+
+rundiff **never edits your Claude Code config** — `hook print` writes to stdout
+and you merge it (or your dotfiles do).
+
+**What it rewrites:** a *metacharacter-free, direct* invocation of a recognized
+test tool — `go test`, `pytest`, `jest`, `vitest run`, `cargo test`, `tsc`,
+`eslint`, bare or under `npx` / `pnpm exec` / `python -m`, optionally behind a
+single `cd <dir> && ` prefix. **Nothing else.** A pipeline, a redirect, an `&&`
+chain, a glob, a quoted argument, `$(…)`, an env prefix, `--watch`/`--json`, or
+`npm test` is left alone, on purpose:
+
+- rundiff **replaces** a command's stdout with the JSON record plus a delta, so
+  rewriting anything whose stdout is consumed downstream would break it.
+- `npm test`'s script body is invisible and may be a *watcher* — and a wrapped
+  watcher hangs forever with no output (rundiff buffers, and gives no TTY).
+- Bare `vitest` is watch mode too; only `vitest run` is rewritten.
+
+To check what it would do, without a hook:
+
+```console
+$ rundiff hook rewrite --explain 'go test ./...'
+rewrite: rundiff -- go test ./...
+$ rundiff hook rewrite --explain 'npm test'
+left alone (not-a-target): npm test
+```
+
+**Escape hatches** (neither needs a settings change):
+
+```sh
+RUNDIFF_HOOK=0 go test ./...      # runs raw, unwrapped (an env prefix is never rewritten)
+rundiff --full -- go test ./...   # re-runs and shows the whole output instead of the delta
+```
+
+**Security.** The hook returns only the rewritten command — it never returns
+`permissionDecision`, so it never approves anything on your behalf. Claude Code
+then checks the *rewritten* string against your own rules, which is why the
+snippet carries one narrow entry per tool (`Bash(rundiff -- go test:*)`, …).
+⚠ **Never** collapse those into `Bash(rundiff:*)`: rundiff executes whatever argv
+it is handed, so that single entry is `Bash(*)` wearing a costume.
+
+The rewrite is **best-effort**. If another `PreToolUse` hook is registered,
+Claude Code may drop it; nothing breaks — the command simply runs unwrapped and
+you get the full output instead of the delta.
+
 ## Composing with pare
 
 rundiff shows *what changed*; on a baseline or a degrade it shows full output,
