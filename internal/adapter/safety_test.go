@@ -479,3 +479,79 @@ func TestCargo_packageSelectionStillClaims(t *testing.T) {
 		}
 	}
 }
+
+// A9 (readable argv). rundiff must have SEEN the tool in the command position
+// before it mints a cross-run pair for a tool whose identity is coarser than
+// its selection unit. `env VAR=… go test` hides -run inside an env VALUE
+// token (hasFlag compares whole tokens, and the CLI reads GOFLAGS from its OWN
+// environment, not from argv), a shell hides the whole command inside one
+// token, and `make test` hides it in a Makefile. Live repro before the fix:
+// `env 'GOFLAGS=-run=TestAlpha|TestBeta' go test ./...`, rename TestAlpha out
+// of the selection while it still fails ⇒ `ok pkg` ⇒ fixed:["pkg"] — a false
+// fixed for a package that still fails.
+func TestExtract_unreadableArgvWithholdsGoPair(t *testing.T) {
+	prev := loadCapture(t, "go-test", "fail")
+	pass := loadCapture(t, "go-test", "pass")
+	for _, argv := range [][]string{
+		{"env", "GOFLAGS=-run=TestAlpha|TestBeta", "go", "test", "./..."},
+		{"sh", "-c", "go test -run TestAlpha ./..."},
+		{"bash", "-lc", "go test -run TestAlpha ./..."},
+		{"zsh", "-c", "go test ./..."},
+		{"bash", "run-tests.sh"},
+		{"make", "test"},
+		{"timeout", "60", "go", "test", "./..."},
+		{"direnv", "exec", ".", "go", "test", "./..."},
+	} {
+		got := Extract(argv, nil, &prev, pass, "")
+		if got != nil && got.Fixed != nil {
+			t.Errorf("argv=%v: fixed=%v, want nil pair (rundiff cannot read the tool's argv here)", argv, got.Fixed)
+		}
+	}
+	// Positive control: the same fail→pass with a READABLE argv still claims.
+	got := Extract([]string{"go", "test", "./..."}, nil, &prev, pass, "")
+	if got == nil || got.Fixed == nil {
+		t.Fatalf("readable `go test ./...` must still claim a pair, got %+v", got)
+	}
+	// And forcing the tool is explicit evidence, so it claims too.
+	if got := Extract([]string{"make", "test"}, nil, &prev, pass, "go-test"); got == nil || got.Fixed == nil {
+		t.Errorf("--tool go-test is explicit evidence; want a pair, got %+v", got)
+	}
+}
+
+// The global clean-run proof (silentWhenClean tools) needs the same evidence
+// the silent-clean ADOPTION path already demands: rundiff must have seen the
+// tool. Otherwise `sh -c 'eslint $(git diff --name-only)'` — which lints only
+// the changed files — proves nothing about a file it never linted, yet its
+// warnings-only report (exit 0, zero errors) reads as a whole-project pass.
+func TestEslint_globalPassNeedsReadableArgv(t *testing.T) {
+	prev := loadCapture(t, "eslint", "fail")
+	// A warnings-only run: prints, exits 0, reports zero errors ⇒ cleanRun.
+	warn := Run{Exit: 0, Output: []byte("/repo/src/other.js\n" +
+		"  3:1  warning  Unexpected console statement  no-console\n\n" +
+		"✖ 1 problem (0 errors, 1 warning)\n")}
+	if got := Extract([]string{"sh", "-c", "eslint $(git diff --name-only)"}, nil, &prev, warn, ""); got != nil && got.Fixed != nil {
+		t.Errorf("fixed=%v, want nil pair: those files were never linted", got.Fixed)
+	}
+	// Readable argv ⇒ the whole-project proof stands and the pair is minted.
+	got := Extract([]string{"eslint", "."}, nil, &prev, warn, "")
+	if got == nil || got.Fixed == nil {
+		t.Fatalf("readable `eslint .` must still claim a pair, got %+v", got)
+	}
+}
+
+// The cost of A9 must stay bounded: the chatty runners self-defend with
+// per-identity evidence (a deselected file loses its ✓/PASS line), so they keep
+// their pair behind an unreadable command position — `pnpm test` is rundiff's
+// own headline example and must not regress.
+func TestExtract_chattyToolsKeepPairBehindAScriptRunner(t *testing.T) {
+	for _, tool := range []string{"vitest", "jest", "pytest", "cargo-test"} {
+		prev := loadCapture(t, tool, "fail")
+		pass := loadCapture(t, tool, "pass")
+		for _, argv := range [][]string{{"npm", "test"}, {"pnpm", "test"}} {
+			got := Extract(argv, nil, &prev, pass, "")
+			if got == nil || got.Fixed == nil {
+				t.Errorf("%s via %v: want a pair (per-identity pass evidence), got %+v", tool, argv, got)
+			}
+		}
+	}
+}

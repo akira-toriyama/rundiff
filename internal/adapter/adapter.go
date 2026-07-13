@@ -92,6 +92,16 @@ type parser interface {
 	// (tsc, eslint) — eligible for silent-clean adoption in Extract and the
 	// only tools whose cleanRun feeds the global pass proof.
 	silentWhenClean() bool
+	// pairNeedsHint marks tools whose IDENTITY is coarser than their SELECTION
+	// unit — go test reports a package, but selects a test name. For those, a
+	// selection rundiff cannot see (a Makefile, a wrapper script, GOFLAGS in a
+	// launcher's argv) makes a green run of a SUBSET print pass evidence for
+	// the whole identity: `ok pkg` while a still-failing test sits deselected.
+	// Their pair therefore requires a readable command position (A9). Tools
+	// whose identity IS the selection unit self-defend: deselect a pytest file
+	// or a vitest test and the identity simply loses its evidence line, which
+	// A7 already turns into silence.
+	pairNeedsHint() bool
 	// parse extracts the failure/pass evidence from one run. ok=false ⇒ this
 	// run makes no claim at all.
 	parse(lines []string, exit int) (parseResult, bool)
@@ -261,6 +271,17 @@ func Extract(argv []string, env map[string]string, prev *Run, cur Run, forceTool
 		return claim
 	}
 
+	// A9 readable argv: no opaque LIST can be complete — `make test` hides a
+	// -run in a Makefile and make is not a shell — so the rule is the inverse
+	// one. rundiff must have SEEN the tool in the command position (its own
+	// hint fired) or been TOLD it (--tool). Without that, a selection it cannot
+	// read may be in force, and for a tool whose identity is coarser than its
+	// selection unit a green subset run reads as a fix.
+	argvReadable := forced != nil || curR.p.hint(argv)
+	if curR.p.pairNeedsHint() && !argvReadable {
+		return claim
+	}
+
 	// A7 strict accounting: every previously-failing identity must either
 	// still be failing, or carry positive pass evidence. For chatty tools that
 	// is PER-IDENTITY only (ok pkg, PASS file, an all-dots progress line, test
@@ -271,7 +292,12 @@ func Extract(argv []string, env map[string]string, prev *Run, cur Run, forceTool
 	// identity the tool reported as not-run (skip / no tests to run) is
 	// unaccounted no matter what: not running a failure is not fixing it. One
 	// unaccounted identity withholds the whole pair.
-	globalPass := cur.Exit == 0 && curR.res.cleanRun && curR.p.silentWhenClean()
+	// The global proof is whole-project by nature, so it must rest on the same
+	// evidence the silent-clean ADOPTION path already demands (see adopt
+	// above): that rundiff knows which tool ran. `sh -c 'eslint $(git diff
+	// --name-only)'` lints only the changed files, and its zero-error report
+	// would otherwise vouch for a file it never opened.
+	globalPass := cur.Exit == 0 && curR.res.cleanRun && curR.p.silentWhenClean() && argvReadable
 	for id := range prevR.res.failing {
 		if _, skipped := curR.res.notRun[id]; skipped {
 			return claim

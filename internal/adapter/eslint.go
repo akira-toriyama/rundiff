@@ -55,6 +55,10 @@ func (eslint) selectionFlags([]string) bool { return false } // eslint has no na
 
 func (eslint) silentWhenClean() bool { return true }
 
+// No name-level selection; its whole-project proof is guarded by argvReadable in
+// Extract (a path-limited invocation cannot vouch for a file it never linted).
+func (eslint) pairNeedsHint() bool { return false }
+
 func (eslint) parse(lines []string, exit int) (parseResult, bool) {
 	if exit != 0 && exit != 1 {
 		return parseResult{}, false // 2 = eslint's own crash / config error

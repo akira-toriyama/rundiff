@@ -68,6 +68,10 @@ func (jest) selectionFlags(argv []string) bool {
 
 func (jest) silentWhenClean() bool { return false }
 
+// Identity = the file; a fully-filtered file is omitted from the report, so it
+// carries no pass evidence (A7 withholds).
+func (jest) pairNeedsHint() bool { return false }
+
 func (jest) parse(lines []string, exit int) (parseResult, bool) {
 	if exit != 0 && exit != 1 {
 		return parseResult{}, false

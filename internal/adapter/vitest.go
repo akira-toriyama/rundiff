@@ -82,6 +82,10 @@ func (vitest) selectionFlags(argv []string) bool {
 
 func (vitest) silentWhenClean() bool { return false }
 
+// Identity = the file; a fully-filtered file prints the ↓ skip marker, which is
+// notRun, not pass evidence (A7 withholds).
+func (vitest) pairNeedsHint() bool { return false }
+
 func (vitest) parse(lines []string, exit int) (parseResult, bool) {
 	if exit != 0 && exit != 1 {
 		return parseResult{}, false

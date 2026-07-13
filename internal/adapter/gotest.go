@@ -65,6 +65,10 @@ func (goTest) selectionFlags(argv []string) bool {
 
 func (goTest) silentWhenClean() bool { return false }
 
+// Identity = the package; selection = the test NAME. A -run rundiff cannot see
+// makes `ok pkg` a subset's pass, not the package's.
+func (goTest) pairNeedsHint() bool { return true }
+
 func (goTest) parse(lines []string, exit int) (parseResult, bool) {
 	if exit != 0 && exit != 1 {
 		return parseResult{}, false // 2 = flag misuse / go's own error

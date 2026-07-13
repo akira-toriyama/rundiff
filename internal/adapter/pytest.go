@@ -85,6 +85,10 @@ func (pytest) selectionFlags(argv []string) bool {
 
 func (pytest) silentWhenClean() bool { return false }
 
+// Identity = the file; a -k that deselects it removes its evidence line, and A7
+// turns the unaccounted identity into silence on its own.
+func (pytest) pairNeedsHint() bool { return false }
+
 func (pytest) parse(lines []string, exit int) (parseResult, bool) {
 	// 2 interrupted / 3 internal / 4 usage: not a test verdict. 5 (no tests
 	// collected) must not look like a green suite.

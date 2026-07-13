@@ -107,8 +107,9 @@ vitest suite paths; tsc / eslint diagnostic paths), the package import path for
 | A4 | parse + reconcile | the tool's sentinel ("run finished" line) missing, or the extracted failing count disagrees with the tool's own summary counts |
 | A5 | exit cross-check + cap | exit outside the tool's accepted set; `(exit==0) ⇎ (failing empty)`; signal exit; > 200 identities |
 | A6 | comparability (pair) | baseline, unparsed previous run, or a different tool ⇒ `fixed`/`new` null (`failing` survives) |
-| A7 | selection variance (pair) | a NAME-level selection flag (`go test -run`/`-skip`, pytest `-k`/`-m`/`--lf`, jest/vitest `-t`/`--onlyChanged`/`--changed`/`--shard`, a cargo name filter) in argv or the environment — or an **opaque command string** rundiff cannot introspect (`npx -c`/`--call`, `python -c`) — ⇒ `fixed`/`new` null. A rename or an unrelated edit silently deselects a still-failing test under identical argv, so a green run proves nothing, and a selection flag can hide inside the opaque string |
+| A7 | selection variance (pair) | a NAME-level selection flag (`go test -run`/`-skip`, pytest `-k`/`-m`/`--lf`, jest/vitest `-t`/`--onlyChanged`/`--changed`/`--shard`, a cargo name filter) in argv or the environment — or an **opaque command** rundiff cannot introspect: a shell in the command position (`sh`/`bash`/`zsh`/`dash`/`fish`/`ksh`/`ash` — `bash -lc 'go test -run X'` is ONE token, so every whole-token gate goes blind), an argv-carrying launcher (`env`, `direnv`, `dotenv`, `xargs`, `time`, `timeout`, `nice`, `stdbuf`, `nohup`, `sudo` — `env GOFLAGS=-run=X go test` hides the selection in an env-assignment token), `npx -c`/`--call`, or `python -c` — ⇒ `fixed`/`new` null. A rename or an unrelated edit silently deselects a still-failing test under identical argv, so a green run proves nothing |
 | A8 | strict accounting (pair) | any previously-failing identity lacking positive evidence in the current run ⇒ `fixed`/`new` null together |
+| A9 | readable argv (pair) | rundiff never SAW the tool in the command position (its own argv hint did not fire, and `--tool` was not given) ⇒ `fixed`/`new` null for a tool whose **identity is coarser than its selection unit** (`go test`: identity = package, selection = test name), and the `silentWhenClean` global clean-run proof (tsc, eslint) is withheld too |
 
 A8 is the load-bearing rule: **`fixed` is never inferred from absence.** For
 the chatty tools (go test, pytest, jest, vitest, cargo) evidence is strictly
@@ -126,6 +127,19 @@ vitest `↓` file or a `✓ … skipped` count. Tool-reported skip totals that
 cannot be attributed to an identity (jest's `N skipped/todo`, a go `--- SKIP:`
 mark, a pytest `N deselected` bar) drop ALL pass evidence for that run —
 conservative, never a lie.
+
+A9 exists because **no opaque list can ever be complete**: `make test` can run
+`go test -run X` and `make` is not a shell, so enumerating the wrappers rundiff
+distrusts is a losing game. A9 inverts it — rundiff must have *seen* the tool it
+is claiming about. It is scoped to the cases where blindness actually lies: a
+tool whose identity is coarser than its selection unit (a green run of a *subset*
+of `pkg` prints `ok pkg`, which reads as the whole package passing), and the
+whole-project clean-run proof (`sh -c 'eslint $(git diff --name-only)'` lints
+only the changed files, and its zero-error report would otherwise vouch for a
+file it never opened). The tools whose identity *is* their selection unit
+(pytest files, jest/vitest files, cargo test names) keep their pair behind an
+unreadable command position: deselecting one removes its evidence line, which A8
+already turns into silence.
 
 ### Known limitations (documented residuals, all on the abstain-or-honest side except the first)
 
