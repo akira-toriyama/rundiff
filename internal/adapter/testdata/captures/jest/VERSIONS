@@ -1,1 +1,2 @@
 jest 29.7.0
+jest 30.4.1  (v30-*.out — second era, real capture; note: prints no per-file PASS lines on an all-pass run without a TTY)

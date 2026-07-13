@@ -184,6 +184,14 @@ already turns into silence.
   identity; a fail→delete-then-add-a-passing-example across runs could read as
   that item fixed. Cross-run only (same-run duplicates are refused); low
   likelihood, and doc-tests rarely fail in the fix→test loop this targets.
+- **jest ≥ 30 gives no `fixed` on an all-green run without a TTY.** jest 30
+  stopped printing the per-file `PASS <file>` lines on a run with zero failures
+  when stdout is not a terminal — and rundiff's runner never allocates one. jest
+  has no global clean-run proof (only tsc/eslint do), so a previously-failing
+  file that now passes carries no evidence and the pair is withheld: `failing`
+  and the line diff still stand, `fixed`/`new` go silent. Abstention, never a
+  false claim. jest 29 still prints the lines; a run with any failure prints
+  `FAIL <file>` in both. Pinned by `TestExtract_acrossEras`.
 
 ### Claim invariants (enforced by tests + fuzz)
 

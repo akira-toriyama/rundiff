@@ -1,0 +1,33 @@
+
+ RUN  v1.6.1 /home/dev/fixture
+
+ ✓ src/str.test.ts  (1 test) 1ms
+ ❯ src/math.test.ts  (2 tests | 1 failed) 4ms
+   ❯ src/math.test.ts > multiplies
+     → expected 6 to be 7 // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/math.test.ts > multiplies
+AssertionError: expected 6 to be 7 // Object.is equality
+
+- Expected
++ Received
+
+- 7
++ 6
+
+ ❯ src/math.test.ts:3:42
+      1| import { expect, test } from 'vitest'
+      2| test('adds', () => { expect(1 + 1).toBe(2) })
+      3| test('multiplies', () => { expect(2 * 3).toBe(7) })
+       |                                          ^
+      4| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 2 passed (3)
+   Start at  13:35:35
+   Duration  127ms (transform 22ms, setup 0ms, collect 22ms, tests 5ms, environment 0ms, prepare 60ms)
+
