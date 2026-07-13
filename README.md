@@ -190,7 +190,7 @@ left alone (not-a-target): npm test
 
 ```sh
 RUNDIFF_HOOK=0 go test ./...      # runs raw, unwrapped (an env prefix is never rewritten)
-rundiff --full -- go test ./...   # same cache entry, full output instead of the delta
+rundiff --full -- go test ./...   # re-runs and shows the whole output instead of the delta
 ```
 
 **Security.** The hook returns only the rewritten command — it never returns

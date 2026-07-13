@@ -255,3 +255,45 @@ func TestHook_unknownSubcommandIsRundiffsOwnError(t *testing.T) {
 		t.Errorf("exit = %d, want %d (a mistyped subcommand is a config error the user must see)", code, codeRundiff)
 	}
 }
+
+// The --bin chain must be internally consistent: `hook print --bin X` grants
+// `Bash(X -- go test:*)` and prints a guard that runs `X hook rewrite --bin X`,
+// so the REWRITE this CLI produces under --bin must be exactly what those
+// entries approve. The bug this pins: `hook rewrite` used to discard --bin and
+// always emit bare `rundiff --`, so an absolute-path install prompted on every
+// command (the printed permission covered a string the hook never emitted). The
+// unit test in internal/hook checks the pure leaf, which never had the bug —
+// this checks the wiring, which did.
+func TestHookRewrite_binFlagThreadsIntoTheRewrite(t *testing.T) {
+	const abs = "/opt/homebrew/bin/rundiff"
+	out, _, code := runHook(t, goTestEvent, "hook", "rewrite", "--bin", abs)
+	if code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	var got struct {
+		HookSpecificOutput struct {
+			UpdatedInput struct {
+				Command string `json:"command"`
+			} `json:"updatedInput"`
+		} `json:"hookSpecificOutput"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
+	rewritten := got.HookSpecificOutput.UpdatedInput.Command
+	want := abs + " -- go test ./..."
+	if rewritten != want {
+		t.Fatalf("rewrite = %q, want %q — the abs path must reach the rewritten command", rewritten, want)
+	}
+	// And that rewrite must be prefix-covered by a permission entry `hook print
+	// --bin` grants, or Claude Code prompts on every command.
+	snippet, _, _ := runHook(t, "", "hook", "print", "--json", "--bin", abs)
+	if !strings.Contains(snippet, `"Bash(`+abs+` -- go test:*)"`) {
+		t.Errorf("print --bin does not grant the entry that covers %q\nsnippet: %s", rewritten, snippet)
+	}
+	// The guard must invoke rewrite WITH --bin, or the guard's own rewrite would
+	// disagree with the entries the same print call generated.
+	if !strings.Contains(snippet, "hook rewrite --bin "+abs) {
+		t.Errorf("guard does not thread --bin into `hook rewrite`; the rewrite it launches would drop it\nsnippet: %s", snippet)
+	}
+}

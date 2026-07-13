@@ -176,7 +176,7 @@ left alone (not-a-target): npm test
 
 ```sh
 RUNDIFF_HOOK=0 go test ./...      # 素で走る（env prefix は決して書き換えられない）
-rundiff --full -- go test ./...   # 同じキャッシュエントリ・差分でなく全出力
+rundiff --full -- go test ./...   # コマンドを再実行し、差分でなく全出力を出す
 ```
 
 **セキュリティ**: hook は書き換えたコマンドを返すだけで、`permissionDecision` は**返さない**

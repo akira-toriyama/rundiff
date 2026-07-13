@@ -164,10 +164,10 @@ func (r *Report) legend() string {
 	}
 	if r.Added != nil && r.Removed != nil && *r.Added == 0 && *r.Removed == 0 {
 		return fmt.Sprintf("   nothing changed since the previous run of this command: its output was identical "+
-			"(%d lines, all unchanged). The previous output still stands — `rundiff --full -- …` reprints it "+
-			"from this same cache entry, without re-running anything.", unchanged)
+			"(%d lines, all unchanged). The previous output still stands; `rundiff --full -- …` re-runs the "+
+			"command and shows its whole output instead of the delta.", unchanged)
 	}
-	return fmt.Sprintf("   (delta only: %d unchanged line(s) omitted; `rundiff --full -- …` reprints the whole output)", unchanged)
+	return fmt.Sprintf("   (delta only: %d unchanged line(s) omitted; `rundiff --full -- …` re-runs and shows the whole output)", unchanged)
 }
 
 // claimLine renders one file-level claim list, clipped like any displayed

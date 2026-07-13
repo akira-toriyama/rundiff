@@ -54,7 +54,10 @@ func newHookCmd() *cobra.Command {
 }
 
 func newHookRewriteCmd() *cobra.Command {
-	var explain string
+	var (
+		explain string
+		bin     string
+	)
 	cmd := &cobra.Command{
 		Use:   "rewrite",
 		Short: "Read a PreToolUse event on stdin, write the hook response on stdout",
@@ -72,21 +75,29 @@ func newHookRewriteCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			opt := hook.Options{Bin: bin}
 			if explain != "" {
-				return explainCommand(cmd, explain)
+				return explainCommand(cmd, explain, opt)
 			}
-			runRewrite(cmd)
+			runRewrite(cmd, opt)
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&explain, "explain", "",
 		"decide this command string and print the verdict instead of speaking the hook protocol")
+	// --bin must agree with the value baked into `hook print --bin`: the rewrite
+	// emits `<bin> -- <cmd>`, and Claude Code checks THAT string against the
+	// permission entries `hook print` generated from the same bin. The guard
+	// `hook print --bin` emits already passes this through, so a hand-registered
+	// hook and a printed one stay consistent.
+	cmd.Flags().StringVar(&bin, "bin", "",
+		"the rundiff path to emit in the rewritten command (must match `hook print --bin`); default: `rundiff`")
 	return cmd
 }
 
 // runRewrite is the hook path. It has no failure mode by construction: it writes
 // a hook response or it writes nothing, and it returns no error either way.
-func runRewrite(cmd *cobra.Command) {
+func runRewrite(cmd *cobra.Command, opt hook.Options) {
 	// The off switch is read BEFORE stdin: a disabled hook does not even look at
 	// the event.
 	if os.Getenv("RUNDIFF_HOOK") == "0" {
@@ -101,9 +112,9 @@ func runRewrite(cmd *cobra.Command) {
 	if err != nil {
 		return
 	}
-	out := hook.Rewrite(event, hook.Options{})
+	out := hook.Rewrite(event, opt)
 	if out == nil {
-		debugRefusal(cmd, event)
+		debugRefusal(cmd, event, opt)
 		return
 	}
 	// One write of one complete object: a partial hook response is worse than
@@ -114,7 +125,7 @@ func runRewrite(cmd *cobra.Command) {
 // debugRefusal explains a non-rewrite on STDERR when RUNDIFF_HOOK_DEBUG=1.
 // stdout belongs to the hook protocol and must stay empty here — that is what
 // "no decision" looks like on the wire.
-func debugRefusal(cmd *cobra.Command, event []byte) {
+func debugRefusal(cmd *cobra.Command, event []byte, opt hook.Options) {
 	if os.Getenv("RUNDIFF_HOOK_DEBUG") != "1" {
 		return
 	}
@@ -124,15 +135,15 @@ func debugRefusal(cmd *cobra.Command, event []byte) {
 		fmt.Fprintln(errOut, "rundiff hook: not a PreToolUse/Bash event with a command")
 		return
 	}
-	_, reason, _ := hook.Command(c, hook.Options{})
+	_, reason, _ := hook.Command(c, opt)
 	fmt.Fprintf(errOut, "rundiff hook: left alone (%s): %s\n", reason, c)
 }
 
 // explainCommand is the human path: it answers "would you rewrite this?" without
 // the hook protocol, so the predicate can be inspected from a terminal.
-func explainCommand(cmd *cobra.Command, s string) error {
+func explainCommand(cmd *cobra.Command, s string, opt hook.Options) error {
 	out := cmd.OutOrStdout()
-	rewritten, reason, ok := hook.Command(s, hook.Options{})
+	rewritten, reason, ok := hook.Command(s, opt)
 	if !ok {
 		fmt.Fprintf(out, "left alone (%s): %s\n", reason, s)
 		return nil

@@ -51,8 +51,13 @@ type settingsPermissions struct {
 //     makes an upgrade-lagged install degrade to "no rewrite" instead of "an
 //     error on every command".
 func guard(bin string) string {
+	// When bin is absolute, it must be threaded to `hook rewrite` too, not only
+	// into the guard's launch: the rewrite emits `<bin> -- <cmd>`, and that string
+	// is what Claude Code re-checks against the permission entries below, which are
+	// also built from bin. Guard, rewrite and permissions have to name the SAME
+	// binary or the entries match nothing and every wrapped command prompts.
 	if path.IsAbs(bin) {
-		return "[ -x " + bin + " ] && " + bin + " hook rewrite || exit 0"
+		return "[ -x " + bin + " ] && " + bin + " hook rewrite --bin " + bin + " || exit 0"
 	}
 	return "command -v " + bin + " >/dev/null 2>&1 && " + bin + " hook rewrite || exit 0"
 }
@@ -157,8 +162,8 @@ func commentary(bin string) string {
 		"",
 		"ESCAPE HATCHES. Two, and neither needs this file edited:",
 		"  RUNDIFF_HOOK=0 go test ./...   — an env prefix is never rewritten.",
-		"  "+bin+" --full -- go test ./...   — reprints the last full output from",
-		"                                    the cache without re-running anything.",
+		"  "+bin+" --full -- go test ./...   — re-runs the command and shows its",
+		"                                    whole output instead of the delta.",
 		"",
 		"THE `command -v` GUARD. The hook is a no-op when rundiff is not installed.",
 		"Without it, every Bash call in every session would fail on a missing binary.",

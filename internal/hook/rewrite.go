@@ -155,8 +155,7 @@ func AdditionalContext() string {
 		"answer and is declining to guess rather than risk a wrong one. Everything after " +
 		"line 1 is a delta, not a transcript: it contains only the lines that CHANGED " +
 		"since the last run of this same command, so an empty body means this run's output " +
-		"was identical to the previous one. The full output of this run is still " +
-		"available — `rundiff --full -- <cmd>` reprints it from the same cache entry " +
-		"without re-running anything, and `RUNDIFF_HOOK=0 <cmd>` is the same command " +
-		"unwrapped."
+		"was identical to the previous one. To see the whole output, `rundiff --full -- <cmd>` " +
+		"re-runs the command and shows all of it instead of the delta, and `RUNDIFF_HOOK=0 " +
+		"<cmd>` runs the same command unwrapped."
 }

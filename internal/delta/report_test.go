@@ -150,3 +150,22 @@ func TestDelta_legendNamesTheOmission(t *testing.T) {
 		t.Errorf("prose leaked into --json:\nline: %s\nbody: %q", line, jsonBody)
 	}
 }
+
+// The legend must not promise what --full does not do. --full RE-RUNS the
+// command (runWrap always execs; there is no cache-reprint mode), so any wording
+// that says "without re-running" or "from the cache" is a lie an agent will act
+// on. This pins the honest phrasing.
+func TestDelta_legendDoesNotClaimCacheReprint(t *testing.T) {
+	prev := bigRun(1, "keep", "gone")
+	for _, cur := range []Run{bigRun(1, "keep", "fresh"), prev} { // non-empty and empty delta
+		_, body := Render(Diff(&prev, cur, Meta{Key: "k"}, Options{}), Options{})
+		for _, lie := range []string{"without re-running", "from the cache", "from this same cache", "from the same cache"} {
+			if strings.Contains(body, lie) {
+				t.Errorf("legend claims %q, but --full re-runs the command:\n%s", lie, body)
+			}
+		}
+		if !strings.Contains(body, "re-run") {
+			t.Errorf("legend must state that --full re-runs:\n%s", body)
+		}
+	}
+}

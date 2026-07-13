@@ -25,8 +25,8 @@
 #
 # ESCAPE HATCHES. Two, and neither needs this file edited:
 #   RUNDIFF_HOOK=0 go test ./...   — an env prefix is never rewritten.
-#   rundiff --full -- go test ./...   — reprints the last full output from
-#                                     the cache without re-running anything.
+#   rundiff --full -- go test ./...   — re-runs the command and shows its
+#                                     whole output instead of the delta.
 #
 # THE `command -v` GUARD. The hook is a no-op when rundiff is not installed.
 # Without it, every Bash call in every session would fail on a missing binary.
