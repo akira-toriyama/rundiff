@@ -93,17 +93,43 @@ func unwrapPython(bases, rest []string) ([]string, []string) {
 	return bases, nil
 }
 
-// commandOpaque reports whether argv runs an arbitrary command STRING that
-// rundiff cannot introspect: `npx -c/--call '<shell>'`, `npm|pnpm|yarn|bun
-// exec -c '<shell>'`, or `python -c '<code>'`. A tool's own selection flag can
-// hide inside that string (npx -c 'vitest -t /x/'), invisible to the gates, so
-// a cross-run claim must abstain — the failing set (from printed lines) stays
-// sound, only the fixed/new pair is withheld.
+// shells run a command the gates cannot read. `bash -lc 'go test -run X'` puts
+// the WHOLE command in one token, so hasFlag — which compares whole tokens —
+// sees `-lc` and a blob; `bash run.sh` hides it in a file. Neither the flag
+// spelling nor the presence of -c can be relied on (a login shell's -lc is one
+// glued token), so the command position alone decides.
+var opaqueShells = map[string]bool{
+	"sh": true, "bash": true, "zsh": true, "dash": true, "fish": true, "ksh": true, "ash": true,
+}
+
+// argvCarriers exec another program from their own argv. Two ways they blind a
+// gate: they can carry an ENV ASSIGNMENT as a plain token (`env
+// GOFLAGS=-run=X go test` — hasFlag sees the single token "GOFLAGS=-run=X",
+// and the CLI lifts GOFLAGS from its OWN environment, where it is not set), and
+// they displace the tool from the command position so no hint fires. Cheap to
+// list, and the alternative — trusting each parser's per-identity evidence to
+// catch it — is exactly the reasoning a false `fixed` punishes.
+var argvCarriers = map[string]bool{
+	"env": true, "direnv": true, "dotenv": true, "xargs": true, "time": true,
+	"timeout": true, "nice": true, "stdbuf": true, "nohup": true, "sudo": true,
+}
+
+// commandOpaque reports whether argv runs a command rundiff cannot introspect:
+// a shell or an argv-carrying launcher in the command position, `npx -c/--call
+// '<shell>'`, `npm|pnpm|yarn|bun exec -c '<shell>'`, or `python -c '<code>'`.
+// A tool's own selection flag can hide inside that string (npx -c 'vitest -t
+// /x/', env GOFLAGS=-run=X), invisible to the gates, so a cross-run claim must
+// abstain — the failing set (from printed lines) stays sound, only the
+// fixed/new pair is withheld.
 func commandOpaque(argv []string) bool {
 	if len(argv) == 0 {
 		return false
 	}
-	switch path.Base(argv[0]) {
+	cmd := path.Base(argv[0])
+	if opaqueShells[cmd] || argvCarriers[cmd] {
+		return true
+	}
+	switch cmd {
 	case "npx", "pnpx", "bunx":
 		return hasFlag(argv, "-c", "--call")
 	case "npm", "pnpm", "yarn", "bun":

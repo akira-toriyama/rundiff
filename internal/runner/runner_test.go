@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -125,5 +126,25 @@ func TestGitBranch_nonRepoIsEmpty(t *testing.T) {
 	// A fresh temp dir is not a git repo → "".
 	if b := GitBranch(context.Background(), t.TempDir()); b != "" {
 		t.Errorf("GitBranch = %q, want empty for a non-repo", b)
+	}
+}
+
+// An interrupted run keeps whatever the command had printed. An unwrapped
+// command that is killed still leaves its partial log on the terminal; a
+// wrapper that swallowed it would turn "the suite got as far as pkg/b" into
+// nothing, and an agent handed nothing simply re-runs.
+func TestRun_cancellationKeepsThePartialCapture(t *testing.T) {
+	shOrSkip(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	res, err := Run(ctx, []string{"sh", "-c", "printf 'PASS pkg/a\\nFAIL pkg/b\\n'; sleep 5"})
+	if !errors.Is(err, ErrCancelled) {
+		t.Fatalf("err = %v, want ErrCancelled", err)
+	}
+	if got := string(res.Output); !strings.Contains(got, "FAIL pkg/b") {
+		t.Errorf("Output = %q, want the lines printed before the kill", got)
+	}
+	if res.Exit != -1 {
+		t.Errorf("Exit = %d, want -1 (killed by a signal)", res.Exit)
 	}
 }

@@ -145,6 +145,7 @@ func runWrap(cmd *cobra.Command, args []string, f flags) error {
 
 	ctx := cmd.Context()
 	res, err := runner.Run(ctx, args)
+	interrupted := false
 	if err != nil {
 		switch {
 		case errors.Is(err, runner.ErrNotFound):
@@ -152,7 +153,12 @@ func runWrap(cmd *cobra.Command, args []string, f flags) error {
 		case errors.Is(err, runner.ErrNotExecutable):
 			return &exitError{code: codeNotExecutable, msg: "command not executable: " + args[0]}
 		case errors.Is(err, runner.ErrCancelled):
-			return &exitError{code: codeInterrupted, msg: "interrupted"}
+			// Not a rundiff error: the command ran and was cut short. Whatever it
+			// printed is real output an unwrapped run would have shown, so it is
+			// reported (as a partial capture, never a delta) — but it must not
+			// become the baseline, so the run falls through with the cache
+			// untouched.
+			interrupted = true
 		default:
 			return &exitError{code: codeRundiff, msg: "running command: " + err.Error()}
 		}
@@ -181,8 +187,9 @@ func runWrap(cmd *cobra.Command, args []string, f flags) error {
 
 	// The file-level adapter re-parses both runs' raw bytes and abstains (nil)
 	// whenever it is unsure — a nil claim renders as null fields, never as [].
+	// A truncated run is never parsed: its failing set could not be complete.
 	var claim *delta.FileClaim
-	if c := extractClaim(args, prev, res, f.tool); c != nil {
+	if c := extractClaim(args, prev, res, f.tool); c != nil && !interrupted {
 		claim = &delta.FileClaim{Tool: c.Tool, Failing: c.Failing, Fixed: c.Fixed, New: c.New}
 	}
 
@@ -190,7 +197,7 @@ func runWrap(cmd *cobra.Command, args []string, f flags) error {
 	// explicit `--churn 0` reaches the core as 0 (degrade on any change) instead
 	// of colliding with the unset sentinel.
 	opt := delta.Options{JSON: f.json, Raw: f.raw, Full: f.full, ChurnLimit: &f.churn}
-	rep := delta.Diff(prev, delta.Run{Output: res.Output, Exit: res.Exit},
+	rep := delta.Diff(prev, delta.Run{Output: res.Output, Exit: res.Exit, Interrupted: interrupted},
 		delta.Meta{AgeSeconds: ageSeconds, Key: key[:12], FileClaim: claim}, opt)
 	line, body := delta.Render(rep, opt)
 
@@ -200,6 +207,13 @@ func runWrap(cmd *cobra.Command, args []string, f flags) error {
 	}
 	if body != "" {
 		fmt.Fprintln(out, body)
+	}
+
+	// A partial capture must never become the baseline: the next run would diff
+	// against half a run and report the rest of it as new. Leave the cache alone
+	// and say so — the reported bytes are real, the comparison point is not.
+	if interrupted {
+		return &exitError{code: codeInterrupted, msg: "interrupted (partial output above; baseline unchanged)"}
 	}
 
 	// Update the baseline to this run. A save failure is non-fatal (the diff was

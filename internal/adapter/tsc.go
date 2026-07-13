@@ -47,6 +47,10 @@ func (tsc) selectionFlags([]string) bool { return false } // tsc has no name-lev
 
 func (tsc) silentWhenClean() bool { return true }
 
+// No name-level selection at all; its whole-project proof is guarded by
+// argvReadable in Extract.
+func (tsc) pairNeedsHint() bool { return false }
+
 func (tsc) parse(lines []string, exit int) (parseResult, bool) {
 	// 1 = diagnostics, outputs generated; 2 = diagnostics, outputs skipped.
 	if exit != 1 && exit != 2 {

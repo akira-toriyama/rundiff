@@ -100,6 +100,10 @@ func (cargoTest) selectionFlags(argv []string) bool {
 
 func (cargoTest) silentWhenClean() bool { return false }
 
+// Identity IS the test name — the selection unit itself — so a filtered-out test
+// simply loses its line.
+func (cargoTest) pairNeedsHint() bool { return false }
+
 func (cargoTest) parse(lines []string, exit int) (parseResult, bool) {
 	if exit != 0 && exit != 101 {
 		return parseResult{}, false

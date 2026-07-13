@@ -16,9 +16,17 @@ import "sort"
 // Run is one execution fed into the diff: the raw combined output and the exit
 // code (-1 = terminated by a signal). Raw output is stored so the diff always
 // re-normalizes with the current ruleset.
+//
+// Interrupted marks a run the CALLER cut short (Ctrl-C, or the SIGTERM a tool
+// timeout sends). Output is then whatever the command had printed — a prefix of
+// a run that never finished. A prefix is not a run: everything missing from it
+// is missing because the process died, not because the output changed, so the
+// diff refuses to compare it (see Diff) and the caller must not store it as the
+// next baseline.
 type Run struct {
-	Output []byte
-	Exit   int
+	Output      []byte
+	Exit        int
+	Interrupted bool
 }
 
 // Meta carries the injected facts about the world a Diff cannot observe itself
@@ -91,6 +99,10 @@ const (
 	TransitionStillFailing Transition = "still_failing"
 	TransitionFixed        Transition = "fixed"
 	TransitionRegressed    Transition = "regressed"
+	// TransitionInterrupted is the one transition NOT derived from the exit pair:
+	// the run was cut short, so there is no outcome to compare. It never carries a
+	// delta and never a file-level claim.
+	TransitionInterrupted Transition = "interrupted"
 )
 
 // transition maps (prevExit, curExit) to a Transition. prev == nil ⇒ baseline.
@@ -220,6 +232,29 @@ func Diff(prev *Run, cur Run, meta Meta, opt Options) Report {
 		Normalized: !opt.Raw,
 	}}
 	r.setClaim(meta.FileClaim, prev == nil)
+
+	// An interrupted run is a PREFIX of a run, not a run. Diffing it would report
+	// every line the command never got to print as "removed" — a fabricated
+	// regression — and adopting it as the baseline would poison the next run. So:
+	// show the partial capture, name why, and compare nothing. The caller keeps
+	// the old baseline.
+	if cur.Interrupted {
+		r.Transition = string(TransitionInterrupted)
+		r.Degraded = true
+		r.setReason(reasonInterrupted)
+		// A truncated run cannot vouch for a complete failing set (the tool may
+		// have been about to print more), so no claim survives — enforced here as
+		// well as in the adapter, because a leaf defends its own contract.
+		r.Tool, r.Failing, r.Fixed, r.New = nil, nil, nil, nil
+		if prev != nil {
+			prevExit := prev.Exit
+			r.PrevExit = &prevExit
+			age := meta.AgeSeconds
+			r.BaselineAgeS = &age
+		}
+		r.body(cur.Output, opt)
+		return r
+	}
 
 	if prev == nil {
 		r.Transition = string(TransitionBaseline)

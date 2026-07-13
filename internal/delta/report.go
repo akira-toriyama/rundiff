@@ -79,11 +79,22 @@ func (r *Report) body(output []byte, opt Options) {
 	}
 	var b strings.Builder
 	b.WriteString(r.headerFull())
-	// The run just lost its detail view (baseline/degrade/--full), so a known
-	// failing list is the signal an agent reads first.
+	// The run just lost its detail view (baseline/degrade/--full), so the claim is
+	// the signal an agent reads first — and this is the COMMON case, not the rare
+	// one: G4 degrades any run whose outputs are both small, which most suites are.
+	// The claim used to appear on line 1 only, i.e. nowhere a reader of the body
+	// would find it.
 	if len(r.Failing) > 0 {
 		b.WriteString("\n")
 		b.WriteString(r.claimLine("failing", r.Failing))
+	}
+	if len(r.Fixed) > 0 {
+		b.WriteString("\n")
+		b.WriteString(r.claimLine("fixed", r.Fixed))
+	}
+	if len(r.New) > 0 {
+		b.WriteString("\n")
+		b.WriteString(r.claimLine("new", r.New))
 	}
 	for _, l := range lines {
 		b.WriteByte('\n')
@@ -175,6 +186,8 @@ func boundedFull(output []byte, budget int) ([]string, bool) {
 func (r *Report) headerFull() string {
 	label := "full output"
 	switch {
+	case r.Transition == string(TransitionInterrupted):
+		label = "partial output (interrupted before the command finished)"
 	case r.Transition == string(TransitionBaseline):
 		label = "baseline"
 	case r.DegradeReason != nil:

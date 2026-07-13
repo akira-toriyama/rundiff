@@ -16,6 +16,7 @@ import (
 	"io/fs"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Result is one execution of the wrapped command.
@@ -36,8 +37,15 @@ var ErrNotFound = errors.New("command not found")
 var ErrNotExecutable = errors.New("command not executable")
 
 // ErrCancelled reports that the run was interrupted (context cancelled, e.g.
-// Ctrl-C). The caller should not treat the partial capture as a new baseline.
+// Ctrl-C). The Result still carries the partial capture; the caller must report
+// it but must not treat it as a new baseline.
 var ErrCancelled = errors.New("command cancelled")
+
+// waitDelay bounds how long Wait may block on an orphaned grandchild still
+// holding the output pipe after the child was killed. Long enough that a
+// well-behaved process tree exits on its own; short enough that a Ctrl-C is
+// answered.
+const waitDelay = 2 * time.Second
 
 // Run executes argv (argv[0] is the program, the rest its arguments), capturing
 // combined output and the exit code. ctx cancellation kills the process, so a
@@ -53,6 +61,12 @@ func Run(ctx context.Context, argv []string) (Result, error) {
 	// order and avoiding a concurrent-write race on the buffer.
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
+	// Cancelling kills the CHILD, but grandchildren (npm's node, a shell's
+	// `sleep`) inherit the pipe, and Wait blocks until the last writer closes it —
+	// so without a bound, Ctrl-C on `rundiff -- npm test` would hang for as long
+	// as the orphans live. WaitDelay caps that: after the kill, the pipes are
+	// closed and Wait returns with whatever was copied.
+	cmd.WaitDelay = waitDelay
 
 	err := cmd.Run()
 	res := Result{Output: buf.Bytes(), Exit: 0}
@@ -61,14 +75,21 @@ func Run(ctx context.Context, argv []string) (Result, error) {
 		return res, nil
 	}
 
-	// Interrupted (Ctrl-C): the context was cancelled. This must be checked BEFORE
-	// the *exec.ExitError branch — when the context kills an already-started child,
-	// cmd.Run returns an *exec.ExitError ("signal: killed", ExitCode -1), NOT the
-	// context error, so classifying by ExitError first would mistake an interrupt
-	// for a normal signalled run and let the truncated capture overwrite the good
-	// baseline (runner's invariant: the partial capture must not become the baseline).
+	// Interrupted (Ctrl-C, or the SIGTERM an agent's tool timeout sends). This must
+	// be checked BEFORE the *exec.ExitError branch — when the context kills an
+	// already-started child, cmd.Run returns an *exec.ExitError ("signal: killed",
+	// ExitCode -1), NOT the context error, so classifying by ExitError first would
+	// mistake an interrupt for a normal signalled run.
+	//
+	// The partial capture is RETURNED, not dropped: an unwrapped command that is
+	// killed still leaves whatever it had printed on the terminal, and a wrapper
+	// that swallows it turns "the suite got as far as pkg/b before the timeout"
+	// into nothing — which is worse than not wrapping at all. The invariant it
+	// used to enforce by returning nothing ("a partial capture must never become
+	// the baseline") now belongs to the caller, which reports these bytes and
+	// leaves the cache untouched.
 	if ctx.Err() != nil {
-		return Result{}, ErrCancelled
+		return Result{Output: buf.Bytes(), Exit: -1}, ErrCancelled
 	}
 
 	// The command ran but exited non-zero (or died of its OWN signal): a normal
