@@ -77,6 +77,27 @@ func TestDelta_maxDeltaLinesCapsArraysButCountsStayTrue(t *testing.T) {
 	}
 }
 
+// The claim is the most valuable thing rundiff produces, and the degraded body
+// is where most real runs land (G4 fires whenever both outputs are small — most
+// suites are). It used to appear on line 1 only, i.e. nowhere a reader of the
+// body would find it.
+func TestBody_degradedBodyCarriesTheClaim(t *testing.T) {
+	prev := Run{Output: []byte("FAIL a.test.ts\n"), Exit: 1}
+	cur := Run{Output: []byte("FAIL b.test.ts\n"), Exit: 1}
+	claim := &FileClaim{Tool: "vitest", Failing: []string{"b.test.ts"}, Fixed: []string{"a.test.ts"}, New: []string{"b.test.ts"}}
+
+	r := Diff(&prev, cur, Meta{Key: "k", FileClaim: claim}, Options{})
+	if !r.Degraded || r.DegradeReason == nil || *r.DegradeReason != reasonSmall {
+		t.Fatalf("want the small_output degrade (the common case), got degraded=%v reason=%v", r.Degraded, r.DegradeReason)
+	}
+	_, body := Render(r, Options{})
+	for _, want := range []string{"failing (vitest): b.test.ts", "fixed (vitest): a.test.ts", "new (vitest): b.test.ts"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("degraded body missing %q\ngot:\n%s", want, body)
+		}
+	}
+}
+
 // An interrupted run shows the partial capture, compares nothing, and claims
 // nothing — a prefix of a run is not a run.
 func TestDiff_interruptedComparesNothing(t *testing.T) {
