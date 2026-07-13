@@ -76,3 +76,26 @@ func TestDelta_maxDeltaLinesCapsArraysButCountsStayTrue(t *testing.T) {
 		t.Errorf("rendered JSON should carry truncated:true, got line: %s", line)
 	}
 }
+
+// An interrupted run shows the partial capture, compares nothing, and claims
+// nothing — a prefix of a run is not a run.
+func TestDiff_interruptedComparesNothing(t *testing.T) {
+	prev := Run{Output: []byte("PASS a\nPASS b\n"), Exit: 0}
+	cur := Run{Output: []byte("PASS a\n"), Exit: -1, Interrupted: true}
+	claim := &FileClaim{Tool: "go-test", Failing: []string{"pkg"}, Fixed: []string{"other"}, New: []string{}}
+
+	r := Diff(&prev, cur, Meta{Key: "k", FileClaim: claim}, Options{})
+	if r.Transition != string(TransitionInterrupted) || !r.Degraded {
+		t.Fatalf("transition=%q degraded=%v, want interrupted+degraded", r.Transition, r.Degraded)
+	}
+	if r.Added != nil || r.Removed != nil || r.Unchanged != nil {
+		t.Errorf("counts must stay null: a prefix is not a run (added=%v removed=%v)", r.Added, r.Removed)
+	}
+	if r.Tool != nil || r.Failing != nil || r.Fixed != nil || r.New != nil {
+		t.Errorf("a truncated run must carry no claim, got tool=%v failing=%v fixed=%v", r.Tool, r.Failing, r.Fixed)
+	}
+	_, body := Render(r, Options{})
+	if !strings.Contains(body, "PASS a") {
+		t.Errorf("body must show the partial capture, got:\n%s", body)
+	}
+}

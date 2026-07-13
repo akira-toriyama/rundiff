@@ -45,7 +45,22 @@ lexicographically-smallest raw line, so the rendered body is
 permutation-invariant too.
 
 The `transition` comes from the exit pair alone (`pass ⇔ exit == 0`) and is
-therefore always trustworthy, even when the line diff is degraded.
+therefore always trustworthy, even when the line diff is degraded. The one
+transition that is *not* derived from the exit pair is `interrupted` (below).
+
+## Interrupted runs
+
+A run cut short (Ctrl-C, or the SIGTERM a tool timeout sends) is a **prefix of a
+run, not a run**. rundiff reports what the command had printed — an unwrapped
+command that is killed still leaves its partial log, and a wrapper that swallowed
+it would be strictly worse than no wrapper — but it compares nothing:
+`transition: "interrupted"`, `degrade_reason: "interrupted"`, the body is the
+bounded partial capture, `tool`/`failing`/`fixed`/`new` are all null (a truncated
+run cannot vouch for a complete failing set), and **the baseline is left
+untouched** (diffing against half a run would report the missing half as removed).
+Exit code stays 130. The wait for an orphaned grandchild still holding the output
+pipe is bounded (`WaitDelay`), so a Ctrl-C is answered even when the child spawned
+a process tree.
 
 ## Degrade predicate (first-match-wins)
 
@@ -55,6 +70,7 @@ instead — it only ever shows *more*, so the predicates are biased to fire.
 | # | reason | condition | counts |
 |---|---|---|---|
 | — | (baseline) | `prev == nil` | null |
+| — | `interrupted` | the run was cut short (see above) — no comparison, no claim, no new baseline | null |
 | G1 | `binary` | a NUL byte, or >10% non-text over a 64 KiB head sample | null |
 | G2 | `too_large` | either run > 8 MiB or > 50 000 lines (map never built) | null |
 | G3 | `interleave` | a physical line > 8192 bytes (torn parallel output) | null |

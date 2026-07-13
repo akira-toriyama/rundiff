@@ -16,6 +16,9 @@ const (
 	reasonSmall         = "small_output"
 	reasonHighChurn     = "high_churn"
 	reasonNormUncertain = "normalization_uncertain"
+	// reasonInterrupted is the one reason that is not a guard on the input: the
+	// run was cut short, so there is no second run to compare (see Diff).
+	reasonInterrupted = "interrupted"
 )
 
 const (

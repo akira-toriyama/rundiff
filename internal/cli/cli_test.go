@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // runCLI drives the root command with args and returns stdout and the mapped
@@ -385,5 +386,48 @@ func TestToolClaimSurvivesDegrade(t *testing.T) {
 	}
 	if !strings.Contains(out, `"fixed":["example.com/fix/calc"]`) {
 		t.Errorf("degraded line 1 lost the claim: %s", out)
+	}
+}
+
+// An interrupted run (Ctrl-C, or the SIGTERM a tool timeout sends) reports the
+// partial capture and does NOT become the baseline. Dropping the bytes would
+// make rundiff strictly worse than not wrapping the command at all — an
+// unwrapped kill still leaves the partial log — and caching them would let half
+// a run become the comparison point for the next one.
+func TestInterrupted_reportsPartialAndNeverBecomesBaseline(t *testing.T) {
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("/bin/sh unavailable")
+	}
+	dir := t.TempDir()
+	t.Setenv("RUNDIFF_CACHE_DIR", dir)
+
+	script := filepath.Join(t.TempDir(), "slow.sh")
+	if err := os.WriteFile(script,
+		[]byte("#!/bin/sh\nprintf 'PASS pkg/a\\nFAIL pkg/b — assertion failed\\n'\nsleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	out, code := runCLICtx(t, ctx, "--", script)
+
+	if code != codeInterrupted {
+		t.Errorf("exit code = %d, want %d (interrupted)", code, codeInterrupted)
+	}
+	for _, want := range []string{`"transition":"interrupted"`, `"degrade_reason":"interrupted"`, `"tool":null`, `"fixed":null`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stdout missing %s\ngot: %s", want, out)
+		}
+	}
+	if !strings.Contains(out, "FAIL pkg/b") {
+		t.Errorf("stdout must carry the lines printed before the kill, got: %s", out)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("cache dir has %d entries, want 0: a partial capture must never become the baseline", len(entries))
 	}
 }

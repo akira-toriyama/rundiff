@@ -175,6 +175,8 @@ func boundedFull(output []byte, budget int) ([]string, bool) {
 func (r *Report) headerFull() string {
 	label := "full output"
 	switch {
+	case r.Transition == string(TransitionInterrupted):
+		label = "partial output (interrupted before the command finished)"
 	case r.Transition == string(TransitionBaseline):
 		label = "baseline"
 	case r.DegradeReason != nil:

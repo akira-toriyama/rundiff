@@ -110,9 +110,9 @@ no trustworthy line diff was computed (baseline, or a degrade that nulls counts)
 | `key` | string | 12-hex prefix of the cache key (which baseline) |
 | `exit` | int | the wrapped command's exit code (`-1` = signal) |
 | `prev_exit` | int \| null | the baseline's exit code (`null` on baseline) |
-| `transition` | enum | `baseline` \| `still_passing` \| `still_failing` \| `fixed` \| `regressed` — from the exit pair, always trustworthy |
+| `transition` | enum | `baseline` \| `still_passing` \| `still_failing` \| `fixed` \| `regressed` — from the exit pair, always trustworthy — or `interrupted` (the run was cut short; nothing is compared) |
 | `degraded` | bool | `true` ⇒ the body is bounded full output, not a delta |
-| `degrade_reason` | enum \| null | `binary` \| `too_large` \| `interleave` \| `small_output` \| `high_churn` \| `normalization_uncertain` |
+| `degrade_reason` | enum \| null | `binary` \| `too_large` \| `interleave` \| `small_output` \| `high_churn` \| `normalization_uncertain` \| `interrupted` |
 | `added` / `removed` / `unchanged` | int \| null | line counts (multiset; `unchanged` includes moved lines) |
 | `churn` | float \| null | `(added+removed)/(added+removed+unchanged)` |
 | `total_prev` / `total_cur` | int \| null | normalized line counts |
@@ -140,6 +140,14 @@ high codes for its own failures:
 
 A propagated `125`/`126`/`127`/`130` is distinguishable from rundiff's own by the
 JSON line: rundiff's own errors print to **stderr** and emit **no** JSON line.
+
+An **interrupted** run (`130`) is not one of rundiff's own errors: the command
+ran and was cut short, so rundiff still prints the record and the partial capture
+the command had produced — an unwrapped command that is killed leaves its partial
+log too, and a wrapper that swallowed it would be worse than no wrapper. Nothing
+is compared (`transition: "interrupted"`), no claim is made, and **the baseline is
+left untouched**, so the next complete run still diffs against the last complete
+one.
 
 ## Composing with pare
 
