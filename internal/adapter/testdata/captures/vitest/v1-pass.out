@@ -1,0 +1,11 @@
+
+ RUN  v1.6.1 /home/dev/fixture
+
+ ✓ src/str.test.ts  (1 test)
+ ✓ src/math.test.ts  (2 tests) 1ms
+
+ Test Files  2 passed (2)
+      Tests  3 passed (3)
+   Start at  13:35:16
+   Duration  125ms (transform 25ms, setup 0ms, collect 24ms, tests 1ms, environment 0ms, prepare 59ms)
+
