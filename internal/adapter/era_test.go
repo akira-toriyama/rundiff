@@ -7,12 +7,15 @@ import (
 
 // Cross-era regression. The parsers fingerprint output, not versions, so a
 // format that drifts between tool releases must either keep parsing or abstain
-// — never lie. These captures are a SECOND era of each tool (older or, for
-// jest, newer), taken from a real run, and they pin exactly that: the same
-// claim where the format is compatible, and honest silence where it is not.
+// — never lie. These captures are ADDITIONAL eras of each tool (older or
+// newer than the fail.out/pass.out era), taken from real runs, and they pin
+// exactly that: the same claim where the format is compatible, and honest
+// silence where it is not.
 //
 // Provenance is in each tool's testdata/captures/<tool>/VERSIONS. The current
-// era lives in fail.out/pass.out; the second era in v<N>-fail.out/v<N>-pass.out.
+// era lives in fail.out/pass.out; other eras in v<N>-fail.out/v<N>-pass.out.
+// Regenerate candidates with scripts/gen-adapter-fixtures.sh (e.g.
+// `sh scripts/gen-adapter-fixtures.sh vitest@1.6.1` to re-take an old era).
 func TestExtract_acrossEras(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -63,6 +66,35 @@ func TestExtract_acrossEras(t *testing.T) {
 			argv:    []string{"jest"},
 			failing: []string{"src/math.test.js"},
 			fixed:   nil,
+		},
+		{
+			// vitest 4 repeats jest 30's drift: an all-pass run prints NO
+			// per-file lines at all — only the `Test Files N passed` summary —
+			// where 3.x prints `✓ file (N tests)`. vitest has no global clean
+			// proof (not silentWhenClean), so the previously-failing file
+			// carries no pass evidence and the pair is WITHHELD. The failing
+			// set on a red run still parses; only fixed/new go silent.
+			name: "vitest 4 (no per-file lines on all-pass)", tool: "vitest", era: "v4",
+			argv:    []string{"vitest", "run"},
+			failing: []string{"vtests/math.test.js"},
+			fixed:   nil,
+		},
+		{
+			// eslint 10 keeps the stylish shape: file heading, severity rows,
+			// `✖ N problems` sentinel; a clean run is still zero bytes + exit 0
+			// — the silentWhenClean proof that mints fixed.
+			name: "eslint 10", tool: "eslint", era: "v10",
+			argv:    []string{"eslint", "src"},
+			failing: []string{"/home/dev/fixture/src/bad.js"},
+			fixed:   []string{"/home/dev/fixture/src/bad.js"},
+		},
+		{
+			// tsc 7 (the native compiler) keeps the plain `file(line,col):
+			// error TSnnnn:` shape, and a clean run stays zero bytes + exit 0.
+			name: "tsc 7", tool: "tsc", era: "v7",
+			argv:    []string{"tsc", "--noEmit", "ts/a.ts", "ts/b.ts"},
+			failing: []string{"ts/a.ts", "ts/b.ts"},
+			fixed:   []string{"ts/a.ts", "ts/b.ts"},
 		},
 	}
 

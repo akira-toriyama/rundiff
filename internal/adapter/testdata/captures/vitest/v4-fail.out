@@ -1,0 +1,32 @@
+
+ RUN  v4.1.10 /home/dev/fixture
+
+ ❯ vtests/math.test.js (2 tests | 1 failed) 4ms
+   × multiplies 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  vtests/math.test.js > multiplies
+AssertionError: expected 6 to be 7 // Object.is equality
+
+- Expected
++ Received
+
+- 7
++ 6
+
+ ❯ vtests/math.test.js:5:46
+      3| function mul(a, b) { return a * b; }
+      4| test('adds', () => { expect(add(2, 3)).toBe(5); });
+      5| test('multiplies', () => { expect(mul(2, 3)).toBe(7); });
+       |                                              ^
+      6|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 2 passed (3)
+   Start at  17:17:20
+   Duration  96ms (transform 19ms, setup 0ms, import 31ms, tests 6ms, environment 0ms)
+

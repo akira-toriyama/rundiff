@@ -78,5 +78,14 @@ test -z "$(echo 'not json' | "$BIN" hook rewrite)"
 ! "$BIN" hook print --json | grep -q 'Bash(rundiff:\*)'
 "$BIN" hook print --json | python3 -c 'import json,sys; json.load(sys.stdin)'
 
-rm -rf "$RUNDIFF_CACHE_DIR" "$D"
+echo "→ smoke: gen-adapter-fixtures (go-test matrix only — offline, no npm)"
+GEN="$(mktemp -d)"
+sh scripts/gen-adapter-fixtures.sh -o "$GEN" go-test >/dev/null
+grep -q 'ok  ' "$GEN/go-test/pass.out"
+grep -q -- '--- FAIL: TestMul' "$GEN/go-test/fail.out"
+test "$(cat "$GEN/go-test/fail.exit")" = 1
+# staged transcripts must not leak the capture machine's paths
+! grep -rEq "$HOME|/var/folders|/private/" "$GEN/go-test"
+
+rm -rf "$RUNDIFF_CACHE_DIR" "$D" "$GEN"
 echo "✓ all checks passed"
