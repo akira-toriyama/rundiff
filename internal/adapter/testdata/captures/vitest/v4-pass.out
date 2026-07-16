@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /home/dev/fixture
+
+
+ Test Files  2 passed (2)
+      Tests  3 passed (3)
+   Start at  17:17:22
+   Duration  88ms (transform 16ms, setup 0ms, import 26ms, tests 3ms, environment 0ms)
+

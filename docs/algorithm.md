@@ -192,6 +192,12 @@ already turns into silence.
   and the line diff still stand, `fixed`/`new` go silent. Abstention, never a
   false claim. jest 29 still prints the lines; a run with any failure prints
   `FAIL <file>` in both. Pinned by `TestExtract_acrossEras`.
+- **vitest ≥ 4 repeats jest 30's drift.** An all-pass `vitest run` prints no
+  per-file lines at all — only the `Test Files N passed` summary — where 3.x
+  prints `✓ file (N tests)` per file. Same consequence, same abstention: vitest
+  has no global clean-run proof, so fail→pass withholds the pair; `failing` on
+  a red run and the line diff still stand. Pinned by `TestExtract_acrossEras`
+  (`v4-*` captures).
 
 ### Claim invariants (enforced by tests + fuzz)
 
