@@ -55,6 +55,11 @@ axis. See [README.md](README.md) for behavior and
   or changed rewrite rule must keep `TestRewrite_neverWrapsWhatItCannotExpress`
   (the metacharacter sweep) green, and `hook.Targets()` must stay in sync with
   `adapter.Tools()` (`TestHookTargets_coverAdapterTools`).
+- **Adapter fixtures are real captures.** Stage new candidates with
+  `sh scripts/gen-adapter-fixtures.sh [tool[@version] …]` (dev-only, never CI;
+  it writes to `tmp/adapter-fixtures`). Review each transcript, copy keepers
+  into `internal/adapter/testdata/captures/` (era prefix like `v8-fail.out`),
+  and record provenance in that tool's `VERSIONS` — never commit blind.
 - **Commits:** gitmoji + Conventional Commits
   ([CONTRIBUTING](https://github.com/akira-toriyama/.github/blob/main/CONTRIBUTING.md)).
   Enable the hook: `git config core.hooksPath scripts/hooks`.
