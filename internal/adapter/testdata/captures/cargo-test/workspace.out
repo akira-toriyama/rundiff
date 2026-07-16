@@ -1,0 +1,32 @@
+   Compiling beta v0.1.0 (/home/dev/fixture/beta)
+   Compiling alpha v0.1.0 (/home/dev/fixture/alpha)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running unittests src/lib.rs (target/debug/deps/alpha-8034bf236e0dd3f8)
+
+running 1 test
+test tests::test_add ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/beta-c86e9b8c2900ec7d)
+
+running 1 test
+test tests::test_mul ... FAILED
+
+failures:
+
+---- tests::test_mul stdout ----
+
+thread 'tests::test_mul' (4621781) panicked at beta/src/lib.rs:9:9:
+assertion `left == right` failed
+  left: 6
+ right: 7
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::test_mul
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p beta --lib`

@@ -55,6 +55,26 @@ func TestTools_capturePairs(t *testing.T) {
 			wantFixed:   []string{}, wantNew: []string{"tests::test_mul"},
 		},
 		{
+			// A workspace run interleaves several `Running unittests` sections;
+			// the per-crate failure still parses and the identity still earns
+			// pass evidence on the green run.
+			tool: "cargo-test", argv: []string{"cargo", "test"}, prevSc: "workspace", curSc: "pass",
+			wantFailing: []string{}, wantFixed: []string{"tests::test_mul"}, wantNew: []string{},
+		},
+		{
+			// A failing doc-test coarsens to its item (the `(line N)` suffix is
+			// stripped — docs/algorithm.md). The pass run no longer CONTAINS
+			// that doc example, and a removed test is not a fix: pair withheld.
+			tool: "cargo-test", argv: []string{"cargo", "test"}, prevSc: "doctest", curSc: "pass",
+			wantFailing: []string{}, wantNilPair: true,
+		},
+		{
+			// An `ignored` count in the green run does not block per-identity
+			// claims: tests::test_mul carries its own explicit `... ok`.
+			tool: "cargo-test", argv: []string{"cargo", "test"}, prevSc: "fail", curSc: "ignored",
+			wantFailing: []string{}, wantFixed: []string{"tests::test_mul"}, wantNew: []string{},
+		},
+		{
 			// tsc's clean run is silent: the empty capture is claimable only by
 			// adoption from the failing run's parser + the argv hint.
 			tool: "tsc", argv: []string{"tsc"}, prevSc: "fail", curSc: "pass",
