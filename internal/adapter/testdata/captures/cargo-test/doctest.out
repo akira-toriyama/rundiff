@@ -1,0 +1,38 @@
+   Compiling fixture v0.1.0 (/home/dev/fixture)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running unittests src/lib.rs (target/debug/deps/fixture-d2b34e299a655594)
+
+running 3 tests
+test tests::test_add ... ok
+test tests::test_mul ... ok
+test tests::test_zero ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests fixture
+
+running 2 tests
+test src/lib.rs - broken (line 36) ... FAILED
+test src/lib.rs - add (line 3) ... ok
+
+failures:
+
+---- src/lib.rs - broken (line 36) stdout ----
+Test executable failed (exit status: 101).
+
+stderr:
+
+thread 'main' (4621365) panicked at src/lib.rs:5:1:
+assertion `left == right` failed
+  left: 2
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+
+failures:
+    src/lib.rs - broken (line 36)
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.82s
+
+error: doctest failed, to rerun pass `--doc`

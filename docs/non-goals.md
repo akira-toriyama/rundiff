@@ -44,14 +44,14 @@ What rundiff deliberately does **not** do, so the tool stays small and composabl
 
 ## Deferred (candidates for a later version)
 
-- **Adapter parsers for more tools / more output eras.** v1 recognizes go test,
-  pytest, jest, vitest, cargo test, tsc and eslint, with fixtures captured from
-  one era of each — except cargo, whose fixtures are transcribed from libtest's
-  stability-guaranteed format, not captured from a real run (see
-  `internal/adapter/testdata/captures/*/VERSIONS` for per-tool provenance).
-  Format drift in a future tool version fails the fingerprint or the count
-  reconciliation and the adapter abstains — never lies — but re-capturing new
-  eras (and adding tools) is ongoing work.
+- **Adapter parsers for more tools / more output eras.** The adapter recognizes
+  go test, pytest, jest, vitest, cargo test, tsc and eslint, with fixtures
+  captured from real runs across multiple eras of each (see
+  `internal/adapter/testdata/captures/*/VERSIONS` for per-tool provenance;
+  regenerate with `scripts/gen-adapter-fixtures.sh`). Format drift in a future
+  tool version fails the fingerprint or the count reconciliation and the
+  adapter abstains — never lies — but re-capturing new eras (and adding tools)
+  is ongoing work.
 - **`--baseline <id>` history.** Today rundiff keeps one baseline per key (the
   last run). Pinning an older comparison point needs a per-key run history.
 - **Package scripts (`npm test`) in the hook.** Reading the script body out of
