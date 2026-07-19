@@ -60,8 +60,8 @@ axis. See [README.md](README.md) for behavior and
   it writes to `tmp/adapter-fixtures`). Review each transcript, copy keepers
   into `internal/adapter/testdata/captures/` (era prefix like `v8-fail.out`),
   and record provenance in that tool's `VERSIONS` — never commit blind.
-- **Commits:** gitmoji + Conventional Commits
-  ([CONTRIBUTING](https://github.com/akira-toriyama/.github/blob/main/CONTRIBUTING.md)).
+- **Commits:** gitmoji-driven — the leading `:code:` is the type and drives
+  release semver ([CONTRIBUTING](https://github.com/akira-toriyama/.github/blob/main/CONTRIBUTING.md)).
   Enable the hook: `git config core.hooksPath scripts/hooks`.
 - **Docs:** keep README.md and README.ja.md in sync on any user-visible change,
   both **version-agnostic** (link to Releases, never hardcode a release number).
@@ -69,7 +69,8 @@ axis. See [README.md](README.md) for behavior and
 
 ## Releasing
 
-Tag `vX.Y.Z` and push → `.github/workflows/release.yml` runs git-cliff +
+Compute the next tag with `glyph bump --since-tag`, then tag `vX.Y.Z` and push →
+`.github/workflows/release.yml` renders the notes with `glyph notes` and runs
 GoReleaser (binaries, checksums, Homebrew cask, build-provenance). The cask push
 needs `HOMEBREW_TAP_TOKEN`; without it the release still succeeds and skips only
 the cask. Bump nothing by hand — the version is ldflags-injected at tag time.
