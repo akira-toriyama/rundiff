@@ -1,4 +1,4 @@
-<!-- Commit + PR title follow gitmoji + Conventional Commits:
+<!-- Commit + PR title follow the gitmoji-driven convention:
      https://github.com/akira-toriyama/.github/blob/main/CONTRIBUTING.md -->
 
 ## What & why
