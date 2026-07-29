@@ -64,7 +64,10 @@ func Dir() (string, error) {
 // also treated as absent (with the error surfaced) so a corrupt cache file never
 // wedges a run; the caller re-establishes the baseline.
 func Load(dir, key string) (*Entry, bool, error) {
-	data, err := os.ReadFile(filepath.Join(dir, key+".json"))
+	// key is hex-encoded sha256 (see Key) — it cannot contain a path separator,
+	// and dir comes from the invoking user's own environment (see Dir), so the
+	// joined path cannot escape the cache directory.
+	data, err := os.ReadFile(filepath.Join(dir, key+".json")) // #nosec G304
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, false, nil

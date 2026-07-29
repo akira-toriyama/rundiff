@@ -55,7 +55,10 @@ func Run(ctx context.Context, argv []string) (Result, error) {
 		return Result{}, errors.New("no command given")
 	}
 
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	// Executing the caller-supplied argv IS rundiff's contract (`rundiff -- <cmd>`);
+	// argv comes verbatim from the invoking user's own command line, not from an
+	// untrusted source, so this is not an injection surface.
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...) // #nosec G204
 	var buf bytes.Buffer
 	// Same writer for both → os/exec uses one child pipe, preserving interleave
 	// order and avoiding a concurrent-write race on the buffer.
