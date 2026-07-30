@@ -76,7 +76,10 @@ jobs:
         run: |
           go build -o /tmp/rundiff ./cmd/rundiff
           /tmp/rundiff version
-          export RUNDIFF_CACHE_DIR="$(mktemp -d)"
+          # Assign before export: `export X="$(cmd)"` masks the command's exit
+          # code (SC2155), so a failed mktemp would sail past `set -e`.
+          RUNDIFF_CACHE_DIR="$(mktemp -d)"
+          export RUNDIFF_CACHE_DIR
           F="$(mktemp)"
           # Fixed argv (`cat $F`), changing file content — a changed argv would
           # just be a new baseline, not a diff.
