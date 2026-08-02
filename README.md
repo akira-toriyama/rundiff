@@ -1,7 +1,5 @@
 # rundiff
 
-[日本語](README.ja.md)
-
 **Diff a command's output against its previous run — `fixed` / `new` / `unchanged` — for AI coding agents.**
 
 In a fix → test → fix loop, a coding agent re-reads the *same* 50 KB of test

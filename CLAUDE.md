@@ -63,8 +63,8 @@ axis. See [README.md](README.md) for behavior and
 - **Commits:** gitmoji-driven — the leading `:code:` is the type and drives
   release semver ([CONTRIBUTING](https://github.com/akira-toriyama/.github/blob/main/CONTRIBUTING.md)).
   Enable the hook: `git config core.hooksPath scripts/hooks`.
-- **Docs:** keep README.md and README.ja.md in sync on any user-visible change,
-  both **version-agnostic** (link to Releases, never hardcode a release number).
+- **Docs:** English-only, per the fleet [doc-consistency-policy](https://github.com/akira-toriyama/.github/blob/main/docs/doc-consistency-policy.md).
+  README.md is **version-agnostic** (link to Releases, never hardcode a release number).
 - **Third-party GitHub Actions are pinned to a commit SHA** with a `# vX` comment.
 
 ## Releasing

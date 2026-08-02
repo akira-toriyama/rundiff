@@ -8,7 +8,7 @@
 ## Checks
 
 - [ ] `sh scripts/check.sh` passes locally (build / vet / test -race / smoke)
-- [ ] Docs updated if user-visible behavior changed (README.md + README.ja.md stay in sync)
+- [ ] Docs updated if user-visible behavior changed
 
 <!-- Optional: link a projects task so its status tracks this PR (open →
      in-progress, merge → the given lane). Drop the lane to only reference it.
