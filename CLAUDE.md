@@ -72,7 +72,7 @@ axis. See [README.md](README.md) for behavior and
 Compute the next tag with `glyph bump --since-tag`, then tag `vX.Y.Z` and push →
 `.github/workflows/release.yml` renders the notes with `glyph notes` and runs
 GoReleaser (binaries, checksums, Homebrew cask, build-provenance). The cask push
-needs `HOMEBREW_TAP_TOKEN`; without it the release still succeeds and skips only
+needs `HOMEBREW_TAP_DEPLOY_KEY`; without it the release still succeeds and skips only
 the cask. Bump nothing by hand — the version is ldflags-injected at tag time.
 
 Note: `flake.nix`'s `vendorHash` pins the vendored go modules. When go.mod/go.sum
