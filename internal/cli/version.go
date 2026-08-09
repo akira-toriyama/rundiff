@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// versionLine is the human build-identity line for --version.
 func versionLine() string { return version.Get().Human() }
 
 func newVersionCmd() *cobra.Command {
