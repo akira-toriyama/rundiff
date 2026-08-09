@@ -66,7 +66,6 @@ import (
 // `/opt/homebrew/bin/rundiff`.
 const binName = "rundiff"
 
-// Options configures the rewrite.
 type Options struct {
 	// Bin is the rundiff binary as it must appear in the rewritten string;
 	// "" means "rundiff" (found on PATH). A caller passing an absolute path

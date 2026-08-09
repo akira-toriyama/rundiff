@@ -191,7 +191,6 @@ func hasFlag(argv []string, flags ...string) bool {
 	return false
 }
 
-// hasFlagPrefix reports a token starting with the given prefix (-Z…).
 func hasFlagPrefix(argv []string, prefix string) bool {
 	for _, a := range argv {
 		if strings.HasPrefix(a, prefix) {
